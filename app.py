@@ -47,8 +47,8 @@ df_sim['EXC'] = df_sim['Bal'].apply(lambda x: x if x > 0 else 0)
 
 # 5. Modelo de Regressão por Machine Learning (Bootstrap) sintonizado com IPCC
 # ATENÇÃO: Substitua os valores abaixo pelos números exatos gerados no seu Google Colab
-beta_0_boot = 7.7386  # Intercepto estável médio do Bootstrap
-beta_1_boot = 0.0150  # Inclinação estável média do Bootstrap
+beta_0_boot = 2.9588  # Intercepto estável médio do Bootstrap
+beta_1_boot = 0.0081  # Inclinação estável média do Bootstrap
 
 vazao_base = []
 vazao_sim = []
