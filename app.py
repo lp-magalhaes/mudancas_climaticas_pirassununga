@@ -2,24 +2,33 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import joblib
 
 # 1. Configuração da Página do Simulador
 st.set_page_config(page_title="Impacto Climático - Pirassununga", layout="wide")
 st.title("🌊 Simulador de Impacto Climático no Abastecimento de Água")
-st.subheader("Município: Pirassununga - SP | Regressão por Machine Learning (Bootstrap) + IPCC")
+st.subheader("Município: Pirassununga - SP | Predição Não Linear via Random Forest Regressor")
+
+# Carregar o modelo Random Forest treinado (Tratamento de erro caso o arquivo não esteja no GitHub)
+try:
+    model_rf = joblib.load('modelo_rf_vazao.pkl')
+except FileNotFoundError:
+    st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado no repositório do GitHub. Certifique-se de fazer o upload dele.")
+    st.stop()
 
 # 2. Dados Históricos Reais (Consolidados via Google Colab)
 dados_base = {
+    'Mês_Num': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
     'Mês': ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
     'Chuva_Base': [221.9, 247.0, 255.5, 199.0, 135.2, 137.2, 110.2, 94.6, 168.8, 229.5, 206.3, 216.9],
     'Temp_Base': [24.9, 25.3, 24.5, 23.0, 20.6, 19.7, 20.6, 22.5, 24.7, 25.2, 25.4, 25.5],
-    'Fator_F': [1.04, 1.01, 1.02, 0.99, 0.97, 0.95, 0.96, 0.98, 1.00, 1.02, 1.03, 1.05] # Fotoperíodo Pirassununga
+    'Fator_F': [1.04, 1.01, 1.02, 0.99, 0.97, 0.95, 0.96, 0.98, 1.00, 1.02, 1.03, 1.05]
 }
 df_base = pd.DataFrame(dados_base)
 
 # 3. Painel Lateral Interativo (Controle Único por Temperatura)
 st.sidebar.header("🎛️ Cenário de Aquecimento Global")
-st.sidebar.markdown("Altere a temperatura para ver a resposta automática do modelo de Machine Learning:")
+st.sidebar.markdown("Altere a temperatura para recalcular a pluviosidade (IPCC) e projetar a vazão por Machine Learning:")
 
 delta_temp = st.sidebar.slider("Aumento da Temperatura Média (°C)", min_value=0.0, max_value=5.0, value=2.0, step=0.5)
 
@@ -27,40 +36,36 @@ delta_temp = st.sidebar.slider("Aumento da Temperatura Média (°C)", min_value=
 queda_chuva_por_grau = -0.07 
 delta_chuva_percentual = delta_temp * queda_chuva_por_grau * 100
 
-# Parâmetro físico fixo do solo para o modelo de Thornthwaite
-cad = 100.0  
-
-# 4. Processamento Hidrológico do Cenário Simulado
+# 4. Processamento Hidrológico e Forçantes do IPCC
 df_sim = df_base.copy()
 df_sim['Temp_Sim'] = df_sim['Temp_Base'] + delta_temp
-# A nova chuva simulada (usada como entrada no Machine Learning) é gerada aqui:
 df_sim['Chuva_Sim'] = df_sim['Chuva_Base'] * (1 + delta_chuva_percentual / 100.0)
 
-# Cálculo da Evapotranspiração Potencial (Thornthwaite) para o solo de Pirassununga
+# Criar a memória de Chuva Anterior exigida pelo Random Forest
+df_sim['Chuva_Ant_Base'] = df_sim['Chuva_Base'].shift(1).fillna(df_sim['Chuva_Base'].mean())
+df_sim['Chuva_Ant_Sim'] = df_sim['Chuva_Sim'].shift(1).fillna(df_sim['Chuva_Sim'].mean())
+
+# Cálculo auxiliar da ETP local (Thornthwaite) para o gráfico de solo
 I = np.sum((df_sim['Temp_Sim'] / 5.0) ** 1.514)
 a = (6.75e-7 * I**3) - (7.71e-5 * I**2) + (1.792e-2 * I) + 0.49239
 df_sim['ETP'] = 16 * ((10 * df_sim['Temp_Sim'] / I) ** a) * df_sim['Fator_F']
-
-# Cálculo do Excedente Hídrico do solo (EXC)
 df_sim['Bal'] = df_sim['Chuva_Sim'] - df_sim['ETP']
 df_sim['EXC'] = df_sim['Bal'].apply(lambda x: x if x > 0 else 0)
 
-# 5. Modelo de Regressão por Machine Learning (Bootstrap) sintonizado com IPCC
-# ATENÇÃO: Substitua os valores abaixo pelos números exatos gerados no seu Google Colab
-beta_0_boot = 2.9588  # Intercepto estável médio do Bootstrap
-beta_1_boot = 0.0081  # Inclinação estável média do Bootstrap
-
+# =====================================================================
+# 5. EXECUÇÃO DO MODELO RANDOM FOREST EM TEMPO REAL
+# =====================================================================
 vazao_base = []
 vazao_sim = []
 
 for i in range(12):
-    p_base_mes = df_base['Chuva_Base'].iloc[i]
-    p_sim_mes = df_sim['Chuva_Sim'].iloc[i] # Lâmina simulada recalculada pelo gatilho do IPCC
+    # Formato das Features idêntico ao de treinamento: ['Mes', 'Precipitação', 'Chuva_Anterior', 'Tmed']
+    features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]])
+    features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]])
     
-    # Aplicação da equação de ML obtida no Bootstrap
-    # Usamos o max(1.5, ...) como restrição física para o rio nunca zerar vazão na tela
-    v_base = max(1.5, beta_0_boot + (beta_1_boot * p_base_mes))
-    v_sim = max(1.5, beta_0_boot + (beta_1_boot * p_sim_mes))
+    # O modelo faz a inferência não linear com base no pkl carregado
+    v_base = float(model_rf.predict(features_base)[0])
+    v_sim = float(model_rf.predict(features_sim)[0])
     
     vazao_base.append(v_base)
     vazao_sim.append(v_sim)
@@ -74,23 +79,21 @@ queda_vazao_ago = ((df_sim['Vazao_Sim'].iloc[7] - df_sim['Vazao_Base'].iloc[7]) 
 # 6. Apresentação dos Indicadores na Tela Principal
 col1, col2, col3 = st.columns(3)
 col1.metric("🌡️ Aquecimento Simulado", f"+{delta_temp} °C")
-col2.metric("📉 Queda Automática na Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
-col3.metric("🚨 Impacto na Vazão Seca (Ago)", f"{queda_vazao_ago:.1f} %")
+col2.metric("📉 Queda na Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
+col3.metric("🚨 Mudança na Vazão Seca (Ago)", f"{queda_vazao_ago:.1f} %")
 
 # 7. Construção Gráfica
-st.markdown("### 📊 Resposta da Vazão do Rio via Equação de Machine Learning com Bootstrap")
+st.markdown("### 📊 Comportamento Sazonal da Vazão via Machine Learning (Random Forest)")
 
 fig, ax1 = plt.subplots(figsize=(11, 4.5))
 ax2 = ax1.twinx()
 
-# Linhas de Vazão (Eixo Esquerdo)
-ax1.plot(df_sim['Mês'], df_sim['Vazao_Base'], 'g--', label='Vazão Histórica de Referência (m³/s)', alpha=0.7, linewidth=2)
-ax1.plot(df_sim['Mês'], df_sim['Vazao_Sim'], 'g-', label='Vazão Projetada pelo Modelo (m³/s)', linewidth=3)
+ax1.plot(df_sim['Mês'], df_sim['Vazao_Base'], 'g--', label='Vazão Histórica Estimada (m³/s)', alpha=0.7, linewidth=2)
+ax1.plot(df_sim['Mês'], df_sim['Vazao_Sim'], 'g-', label='Vazão sob Cenário Climático RF (m³/s)', linewidth=3)
 ax1.set_ylabel('Vazão do Rio (m³/s)', color='g', fontsize=12)
 ax1.tick_params(axis='y', labelcolor='g')
 ax1.set_ylim(0, max(df_sim['Vazao_Base'].max(), df_sim['Vazao_Sim'].max()) * 1.3)
 
-# Barras de Excedente do solo (Eixo Direito)
 ax2.bar(df_sim['Mês'], df_sim['EXC'], color='blue', alpha=0.15, label='Excedente Hídrico Solo (mm)')
 ax2.set_ylabel('Excedente Hídrico (mm)', color='b', fontsize=12)
 ax2.tick_params(axis='y', labelcolor='b')
