@@ -82,6 +82,32 @@ st.pyplot(fig)
 
 # 8. Tabela de Dados Brutos Comparativos
 st.markdown("### 📝 Dados Detalhados do Balanço Regional")
-df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Sim', 'EXC', 'Vazao_Base', 'Vazao_Sim']].copy()
-df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Reduzida (mm)', 'Temp. Simulada (°C)', 'Excedente Solo (mm)', 'Vazão Histórica Real (m³/s)', 'Vazão Projetada (m³/s)']
+df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Base', 'Temp_Sim', 'EXC', 'Vazao_Base', 'Vazao_Sim']].copy()
+df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Reduzida (mm)', 'Temp. Base (°C)', 'Temp. Simulada (°C)', 'Excedente Solo (mm)', 'Vazão Histórica Real (m³/s)', 'Vazão Projetada (m³/s)']
 st.dataframe(df_exibicao.round(2), use_container_width=True)
+
+# 7. Construção Gráfica de Alta Fidelidade
+st.markdown("### 📊 Temperatura e Pluviosidade simuladas")
+
+fig, ax1 = plt.subplots(figsize=(11, 4.5))
+ax2 = ax1.twinx()
+
+# Plotagem das curvas de vazão real e simulada (Eixo Esquerdo)
+ax1.plot(df_sim['Mês'], df_sim['Temp_Base'], 'g--', label='Temperatura Média Histórica (°C)', alpha=0.8, linewidth=2)
+ax1.plot(df_sim['Mês'], df_sim['Temp_Sim'], 'g-', label='Temperatura Projetada', linewidth=3)
+ax1.set_ylabel('Temperatura (°C)', color='g', fontsize=12)
+ax1.tick_params(axis='y', labelcolor='g')
+ax1.set_ylim(0, max(df_sim['Temp_Base'].max(), df_sim['Temp_Sim'].max()) * 1.3)
+
+# Barras de Excedente de água do solo (Eixo Direito)
+ax2.bar(df_sim['Mês'], df_sim['Chuva_Sim'], color='blue', alpha=0.15, label='Chuva Projetada (mm)')
+ax2.set_ylabel('Pluviosidade (mm)', color='b', fontsize=12)
+ax2.tick_params(axis='y', labelcolor='b')
+
+ax1.set_xlabel('Mês', fontsize=12)
+fig.legend(loc="upper right", bbox_to_anchor=(0.85, 0.88))
+ax1.grid(True, alpha=0.3)
+
+st.pyplot(fig)
+
+
