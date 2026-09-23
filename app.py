@@ -97,6 +97,6 @@ st.pyplot(fig)
 
 # 8. Tabela de Dados Brutos Comparativos
 st.markdown("### 📝 Dados Detalhados por Cenário (Valores Mensais Médios)")
-df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_base', 'Temp_Sim', 'EXC', 'Vazao_Base', 'Vazao_Sim']].copy()
-df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Simulada (mm)', 'Temp.base (°C)', 'Temp. Simulada (°C)', 'Excedente Solo (mm)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)']
+df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Base', 'Temp_Sim', 'EXC', 'Vazao_Base', 'Vazao_Sim']].copy()
+df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Simulada (mm)', 'Temp. Base (°C)', 'Temp. Simulada (°C)', 'Excedente Solo (mm)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)']
 st.dataframe(df_exibicao.round(2), use_container_width=True)
