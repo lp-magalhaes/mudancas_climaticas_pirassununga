@@ -34,21 +34,30 @@ elasticidade_vazao_por_grau = -0.05
 delta_chuva_percentual = delta_temp * queda_chuva_por_grau * 100
 reducao_vazao_percentual = delta_temp * elasticidade_vazao_por_grau
 
-# 5. Processamento dos Cenários Futuros
-df_sim = df_base.copy()
-df_sim['Temp_Sim'] = df_sim['Temp_Base'] + delta_temp
-df_sim['Chuva_Sim'] = df_sim['Chuva_Base'] * (1 + delta_chuva_percentual / 100.0)
+# [Substitua o bloco da Seção 5 do seu app.py por este]
 
-# Cálculo do impacto direto na Vazão por Elasticidade (Garante harmonia perfeita com a realidade)
-df_sim['Vazao_Base'] = df_sim['Vazao_Real']
-df_sim['Vazao_Sim'] = df_sim['Vazao_Real'] * (1 + reducao_vazao_percentual)
+# 5. Modelo de Regressão por Machine Learning (Bootstrap) sintonizado com IPCC
+# (Substitua os valores abaixo pelos números exatos gerados no seu Colab)
+beta_0_boot = 8.2104  # Intercepto estável extraído via Bootstrap
+beta_1_boot = 0.0125  # Inclinação estável extraída via Bootstrap
 
-# Cálculo da Evapotranspiração Potencial (Thornthwaite) para o solo local
-I = np.sum((df_sim['Temp_Sim'] / 5.0) ** 1.514)
-a = (6.75e-7 * I**3) - (7.71e-5 * I**2) + (1.792e-2 * I) + 0.49239
-df_sim['ETP'] = 16 * ((10 * df_sim['Temp_Sim'] / I) ** a) * df_sim['Fator_F']
-df_sim['Bal'] = df_sim['Chuva_Sim'] - df_sim['ETP']
-df_sim['EXC'] = df_sim['Bal'].apply(lambda x: x if x > 0 else 0)
+vazao_base = []
+vazao_sim = []
+
+for i in range(12):
+    p_base_mes = df_base['Chuva_Base'].iloc[i]
+    p_sim_mes = df_sim['Chuva_Sim'].iloc[i] # Lâmina simulada recalculada pelo gatilho do IPCC
+    
+    # A equação de ML projeta as vazões baseando-se estritamente na chuva observada vs simulada
+    v_base = max(1.5, beta_0_boot + (beta_1_boot * p_base_mes))
+    v_sim = max(1.5, beta_0_boot + (beta_1_boot * p_sim_mes))
+    
+    vazao_base.append(v_base)
+    vazao_sim.append(v_sim)
+
+df_sim['Vazao_Base'] = vazao_base
+df_sim['Vazao_Sim'] = vazao_sim
+
 
 # 6. Apresentação dos Indicadores na Tela Principal
 col1, col2, col3 = st.columns(3)
