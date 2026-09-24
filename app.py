@@ -78,7 +78,7 @@ queda_vazao_ago = ((df_sim['Vazao_Sim'].iloc[7] - df_sim['Vazao_Base'].iloc[7]) 
 
 # 6. Apresentação dos Indicadores na Tela Principal
 col1, col2, col3 = st.columns(3)
-col1.metric("🌡️ Aquecimento Simulado", f"+{delta_temp} °C")
+col1.metric("🌡️ Aquecimento Simulado", f"{delta_temp} °C")
 col2.metric("📉 ALteração na Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 col3.metric("🚨 Mudança na Vazão Seca (Ago)", f"{queda_vazao_ago:.1f} %")
 
