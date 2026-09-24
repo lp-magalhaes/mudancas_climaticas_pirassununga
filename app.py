@@ -30,7 +30,7 @@ df_base = pd.DataFrame(dados_base)
 st.sidebar.header("🎛️ Cenário de Aquecimento Global")
 st.sidebar.markdown("Altere a temperatura para recalcular a pluviosidade (IPCC) e projetar a vazão por Machine Learning:")
 
-delta_temp = st.sidebar.slider("Aumento da Temperatura Média (°C)", min_value=-5.0, max_value=5.0, value=0.0, step=0.1)
+delta_temp = st.sidebar.slider("Variação da Temperatura Média (°C)", min_value=-5.0, max_value=5.0, value=0.0, step=0.1)
 
 # Gatilho Climático Regional (-7% de pluviosidade por grau de aquecimento conforme IPCC)
 queda_chuva_por_grau = -0.07 
@@ -79,7 +79,7 @@ queda_vazao_ago = ((df_sim['Vazao_Sim'].iloc[7] - df_sim['Vazao_Base'].iloc[7]) 
 # 6. Apresentação dos Indicadores na Tela Principal
 col1, col2, col3 = st.columns(3)
 col1.metric("🌡️ Aquecimento Simulado", f"{delta_temp} °C")
-col2.metric("📉 ALteração na Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
+col2.metric("📉 Alteração na Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 col3.metric("🚨 Mudança na Vazão Seca (Ago)", f"{queda_vazao_ago:.1f} %")
 
 # 7. Construção Gráfica
@@ -107,5 +107,5 @@ st.pyplot(fig)
 # 8. Tabela de Dados Brutos Comparativos
 st.markdown("### 📝 Matriz Comparativa de Dados Mensais")
 df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Sim', 'EXC', 'Vazao_Base', 'Vazao_Sim']].copy()
-df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Reduzida (mm)', 'Temp. Simulada (°C)', 'Excedente Solo (mm)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)']
+df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Excedente Solo (mm)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)']
 st.dataframe(df_exibicao.round(2), use_container_width=True)
