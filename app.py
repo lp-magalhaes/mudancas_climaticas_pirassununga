@@ -30,7 +30,7 @@ df_base = pd.DataFrame(dados_base)
 st.sidebar.header("🎛️ Cenário de Aquecimento Global")
 st.sidebar.markdown("Altere a temperatura para recalcular a pluviosidade (IPCC) e projetar a vazão por Machine Learning:")
 
-delta_temp = st.sidebar.slider("Aumento da Temperatura Média (°C)", min_value=0.0, max_value=5.0, value=2.0, step=0.5)
+delta_temp = st.sidebar.slider("Aumento da Temperatura Média (°C)", min_value=-5.0, max_value=5.0, value=0.0, step=0.1)
 
 # Gatilho Climático Regional (-7% de pluviosidade por grau de aquecimento conforme IPCC)
 queda_chuva_por_grau = -0.07 
