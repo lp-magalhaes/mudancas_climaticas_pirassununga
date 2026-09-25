@@ -30,9 +30,9 @@ except Exception:
         st.stop()
 
 # 2. Dados Históricos Reais (Consolidados via Google Colab)
-# CORREÇÃO: Lista de números dos meses restaurada para corrigir o SyntaxError
+# CORREÇÃO DEFINITIVA: Utiliza a função list(range()) para evitar problemas de ocultação de colchetes
 dados_base = {
-    'Mês_Num':,
+    'Mês_Num': list(range(1, 13)),
     'Mês': ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
     'Chuva_Base': [240.8, 163.1, 156.8, 61.8, 53.1, 32.5, 22.6, 23.9, 42.7, 120.7, 169.0, 186.3],
     'Temp_Base': [24.9, 25.3, 24.5, 23.0, 20.5, 19.6, 20.6, 22.6, 24.7, 25.2, 25.5, 25.5],
@@ -177,10 +177,10 @@ df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 # 9. APRESENTAÇÃO DOS INDICADORES NA TELA PRINCIPAL
 # =====================================================================
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("🌡️ Aquecimento Média", f"{delta_temp} °C")
+col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# Correção no fatiamento para extração dos indicadores de Agosto (índice 7)
+# CORREÇÃO: Fatiamento explícito ajustado para o índice 7 (Agosto)
 queda_vazao_ago = ((df_sim['Vazao_Sim'].iloc[7] - df_sim['Vazao_Base'].iloc[7]) / df_sim['Vazao_Base'].iloc[7]) * 100
 col3.metric("🚨 Vazão Fina (Agosto)", f"{queda_vazao_ago:.1f} %")
 
@@ -205,7 +205,7 @@ fig1.legend(loc="upper right", bbox_to_anchor=(0.85, 0.88))
 ax1.grid(True, alpha=0.2)
 st.pyplot(fig1)
 
-# NOVOS GRÁFICOS: Painel duplo para Turbidez e Impacto Econômico
+# PAINEL DUPLO: Turbidez e Impacto Econômico
 st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
 col_graph1, col_grid2 = st.columns(2)
 
