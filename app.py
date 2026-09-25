@@ -73,9 +73,8 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    # CORREÇÃO: Extração explícita do índice [0] para evitar o TypeError no float()
-    v_base = float(model_rf.predict(features_base)[0])
-    v_sim = float(model_rf.predict(features_sim)[0])
+    v_base = float(model_rf.predict(features_base))
+    v_sim = float(model_rf.predict(features_sim))
     
     vazao_base.append(v_base)
     vazao_sim.append(v_sim)
@@ -108,33 +107,37 @@ df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 6
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA) - MATRIZ NUMPY PURA
+# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA) - FIX DOS NOMES DAS COLUNAS
 # =====================================================================
+# Ordem e nomenclatura exata das colunas que o modelo .pkl espera obrigatoriamente
+recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
+
 turb_base = []
 turb_sim = []
 
 for i in range(12):
-    array_base = np.array([[
-        df_sim['Chuva_Base'].iloc[i],
-        df_sim['Vazao_Base'].iloc[i],
-        df_sim['Temp_Base'].iloc[i],
-        df_sim['Chuva_Ant_Base'].iloc[i],
-        df_sim['chuva_45_dias_base'].iloc[i],
-        df_sim['chuva_60_dias_base'].iloc[i]
-    ]], dtype=np.float64)
+    # CORREÇÃO DEFINITIVA: Cria um DataFrame temporário com os nomes das colunas exigidos
+    df_input_base = pd.DataFrame([{
+        'Precipitação': float(df_sim['Chuva_Base'].iloc[i]),
+        'Vazão': float(df_sim['Vazao_Base'].iloc[i]),
+        'Tmed': float(df_sim['Temp_Base'].iloc[i]),
+        'chuva_30_dias_acum': float(df_sim['Chuva_Ant_Base'].iloc[i]),
+        'chuva_45_dias_acum': float(df_sim['chuva_45_dias_base'].iloc[i]),
+        'chuva_60_dias_acum': float(df_sim['chuva_60_dias_base'].iloc[i])
+    }])[recursos_modelo_turbidez] # Reordena de forma estrita para casar com o modelo
     
-    array_sim = np.array([[
-        df_sim['Chuva_Sim'].iloc[i],
-        df_sim['Vazao_Sim'].iloc[i],
-        df_sim['Temp_Sim'].iloc[i],
-        df_sim['Chuva_Ant_Sim'].iloc[i],
-        df_sim['chuva_45_dias_sim'].iloc[i],
-        df_sim['chuva_60_dias_sim'].iloc[i]
-    ]], dtype=np.float64)
+    df_input_sim = pd.DataFrame([{
+        'Precipitação': float(df_sim['Chuva_Sim'].iloc[i]),
+        'Vazão': float(df_sim['Vazao_Sim'].iloc[i]),
+        'Tmed': float(df_sim['Temp_Sim'].iloc[i]),
+        'chuva_30_dias_acum': float(df_sim['Chuva_Ant_Sim'].iloc[i]),
+        'chuva_45_dias_acum': float(df_sim['chuva_45_dias_sim'].iloc[i]),
+        'chuva_60_dias_acum': float(df_sim['chuva_60_dias_sim'].iloc[i])
+    }])[recursos_modelo_turbidez] # Reordena de forma estrita para casar com o modelo
     
-    # Extração estável do índice [0] do array de predição do XGBoost
-    t_base = float(model_xgb.predict(array_base)[0])
-    t_sim = float(model_xgb.predict(array_sim)[0])
+    # Faz a inferência passando as features nomeadas e captura o escalar do índice 0 do array resultante
+    t_base = float(model_xgb.predict(df_input_base)[0])
+    t_sim = float(model_xgb.predict(df_input_sim)[0])
     
     turb_base.append(max(0.1, t_base))
     turb_sim.append(max(0.1, t_sim))
@@ -209,18 +212,3 @@ with col_graph1:
     ax_t.set_ylabel('Turbidez da Água Bruta (NTU)')
     ax_t.set_xlabel('Mês')
     ax_t.legend(fontsize=9, loc='upper right')
-    ax_t.grid(True, alpha=0.2)
-    st.pyplot(fig2)
-
-with col_grid2:
-    st.markdown("#### Acréscimo nos Custos de Tratamento Químico")
-    fig3, ax_c = plt.subplots(figsize=(6, 4))
-    ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
-    ax_c.set_ylabel('Aumento Percentual do Custo (%)')
-    ax_c.set_xlabel('Mês')
-    ax_c.legend(fontsize=9, loc='upper right')
-    ax_c.grid(True, alpha=0.2)
-    st.pyplot(fig3)
-
-# 11. Tabela de Dados Brutos Comparativos Expandida
-st.markdown("### 📝 Matriz de Variáveis Hidrológicas e Econômicas")
