@@ -73,8 +73,9 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    v_base = float(model_rf.predict(features_base))
-    v_sim = float(model_rf.predict(features_sim))
+    # Executa o predict e converte o primeiro elemento para float escalar
+    v_base = float(model_rf.predict(features_base)[0])
+    v_sim = float(model_rf.predict(features_sim)[0])
     
     vazao_base.append(v_base)
     vazao_sim.append(v_sim)
@@ -107,16 +108,14 @@ df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 6
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA) - FIX DOS NOMES DAS COLUNAS
+# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA)
 # =====================================================================
-# Ordem e nomenclatura exata das colunas que o modelo .pkl espera obrigatoriamente
 recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
 
 turb_base = []
 turb_sim = []
 
 for i in range(12):
-    # CORREÇÃO DEFINITIVA: Cria um DataFrame temporário com os nomes das colunas exigidos
     df_input_base = pd.DataFrame([{
         'Precipitação': float(df_sim['Chuva_Base'].iloc[i]),
         'Vazão': float(df_sim['Vazao_Base'].iloc[i]),
@@ -124,7 +123,7 @@ for i in range(12):
         'chuva_30_dias_acum': float(df_sim['Chuva_Ant_Base'].iloc[i]),
         'chuva_45_dias_acum': float(df_sim['chuva_45_dias_base'].iloc[i]),
         'chuva_60_dias_acum': float(df_sim['chuva_60_dias_base'].iloc[i])
-    }])[recursos_modelo_turbidez] # Reordena de forma estrita para casar com o modelo
+    }])[recursos_modelo_turbidez]
     
     df_input_sim = pd.DataFrame([{
         'Precipitação': float(df_sim['Chuva_Sim'].iloc[i]),
@@ -133,9 +132,9 @@ for i in range(12):
         'chuva_30_dias_acum': float(df_sim['Chuva_Ant_Sim'].iloc[i]),
         'chuva_45_dias_acum': float(df_sim['chuva_45_dias_sim'].iloc[i]),
         'chuva_60_dias_acum': float(df_sim['chuva_60_dias_sim'].iloc[i])
-    }])[recursos_modelo_turbidez] # Reordena de forma estrita para casar com o modelo
+    }])[recursos_modelo_turbidez]
     
-    # Faz a inferência passando as features nomeadas e captura o escalar do índice 0 do array resultante
+    # Executa o predict e converte o primeiro elemento para float escalar
     t_base = float(model_xgb.predict(df_input_base)[0])
     t_sim = float(model_xgb.predict(df_input_sim)[0])
     
@@ -212,3 +211,9 @@ with col_graph1:
     ax_t.set_ylabel('Turbidez da Água Bruta (NTU)')
     ax_t.set_xlabel('Mês')
     ax_t.legend(fontsize=9, loc='upper right')
+    ax_t.grid(True, alpha=0.2)
+    st.pyplot(fig2)
+
+with col_grid2:
+    st.markdown("#### Acréscimo nos Custos de Tratamento Químico")
+    fig3, ax_c = plt.subplots(figsize=(6, 4))
