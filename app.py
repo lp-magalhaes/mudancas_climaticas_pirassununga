@@ -22,7 +22,7 @@ except FileNotFoundError:
     st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado no repositório.")
     st.stop()
 
-# 2. DADOS HISTÓRICOS REAIS E VALORES DE TURBIDEZ BASE INTERPOLADOS
+# 2. DADOS HISTÓRICOS REAIS E VALORES DE TURBIDEZ BASE INTERPOLADOS MÊS A MÊS
 dados_base = {
     'Mês_Num': list(range(1, 13)),
     'Mês': ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
@@ -67,7 +67,7 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    # CORREÇÃO DEFINITIVA: Adicionado explicito o fatiamento de índice [0] pós-predict
+    # CORREÇÃO DEFINITIVA: Desempacotamento de array adicionando explicitamente o [0]
     vazao_base.append(float(model_rf.predict(features_base)[0]))
     vazao_sim.append(float(model_rf.predict(features_sim)[0]))
 
@@ -102,11 +102,14 @@ df_sim['Chuva_60_Sim'] = chuva_60_sim
 # =====================================================================
 turb_sim = []
 for i in range(12):
-    # Ordem das features: Vazão, Chuva 45 dias, Chuva 60 dias
-    array_sim = np.array([[df_sim['Vazao_Sim'].iloc[i], df_sim['Chuva_45_Sim'].iloc[i], df_sim['Chuva_60_Sim'].iloc[i]]], dtype=np.float64)
-    # CORREÇÃO DEFINITIVA: Adicionado explicito o fatiamento de índice [0] pós-predict
-    t_sim = float(model_xgb.predict(array_sim)[0])
-    turb_sim.append(max(0.1, t_sim))
+    # REGRA REQUERIDA: Força o cenário a assumir a base caso a temperatura esteja zerada
+    if delta_temp == 0.0:
+        turb_sim.append(df_sim['Turb_Base'].iloc[i])
+    else:
+        array_sim = np.array([[df_sim['Vazao_Sim'].iloc[i], df_sim['Chuva_45_Sim'].iloc[i], df_sim['Chuva_60_Sim'].iloc[i]]], dtype=np.float64)
+        # CORREÇÃO DEFINITIVA: Desempacotamento de array adicionando explicitamente o [0]
+        t_sim = float(model_xgb.predict(array_sim)[0])
+        turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
 
@@ -120,7 +123,6 @@ for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
     t_referencia_mes = df_sim['Turb_Base'].iloc[i]
     
-    # Avalia o aumento percentual em relação à turbidez base real daquele mês específico
     variacao_percentual_turb = ((t_atual - t_referencia_mes) / t_referencia_mes) * 100
     
     if variacao_percentual_turb > 0:
@@ -163,13 +165,10 @@ with col_graph1:
     st.markdown("#### Valor da Turbidez do Rio via XGBoost")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     
-    # Sempre plota a curva base real
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Real')
-    
-    # Inclusão da linha de referência de 46 NTU
     ax_t.axhline(y=46.0, color='black', linestyle='--', alpha=0.5, label='Referência Média (46 NTU)')
     
-    # Mostra a curva simulada apenas se a seleção for diferente de zero
+    # A linha vermelha desaparece da tela caso o controle de aquecimento esteja em zero
     if delta_temp != 0.0:
         ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
         
