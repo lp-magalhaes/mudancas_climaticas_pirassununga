@@ -9,20 +9,20 @@ st.set_page_config(page_title="Impacto Climático - Pirassununga", layout="wide"
 st.title("🌊 Simulador de Impacto Climático no Abastecimento de Água")
 st.subheader("Município: Pirassununga - SP | Modelagem Hidrológica Integrada via Machine Learning")
 
-# Carregar os modelos treinados com tratamento de erros robusto
+# Carregar os modelos treinados com tratamento de erros simples
 try:
     model_rf = joblib.load('modelo_rf_vazao.pkl')
 except FileNotFoundError:
-    st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado no repositório. Certifique-se de fazer o upload dele.")
+    st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado no repositório.")
     st.stop()
 
 try:
     model_xgb = joblib.load('best_xgboost_model.pkl')
 except FileNotFoundError:
-    st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado no repositório. Certifique-se de fazer o upload dele.")
+    st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado no repositório.")
     st.stop()
 
-# 2. DADOS HISTÓRICOS REAIS (CONSOLIDADOS VIA GOOGLE COLAB)
+# 2. DADOS HISTÓRICOS REAIS
 dados_base = {
     'Mês_Num': list(range(1, 13)),
     'Mês': ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
@@ -34,24 +34,22 @@ df_base = pd.DataFrame(dados_base)
 
 # 3. PAINEL LATERAL INTERATIVO (CONTROLE ÚNICO POR TEMPERATURA)
 st.sidebar.header("🎛️ Cenário de Aquecimento Global")
-st.sidebar.markdown("Altere a temperatura para recalcular a pluviosidade (IPCC) e projetar os impactos ambientais:")
-
 delta_temp = st.sidebar.slider("Variação da Temperatura Média (°C)", min_value=-5.0, max_value=5.0, value=0.0, step=0.1)
 
-# Gatilho Climático Regional (-7% de pluviosidade por grau de aquecimento conforme IPCC)
+# Gatilho Climático Regional (-7% de pluviosidade por grau de aquecimento)
 queda_chuva_por_grau = -0.07 
 delta_chuva_percentual = delta_temp * queda_chuva_por_grau * 100
 
-# 4. PROCESSAMENTO HIDROLÓGICO E FORÇANTES DO IPCC
+# 4. PROCESSAMENTO HIDROLÓGICO DO CENÁRIO
 df_sim = df_base.copy()
 df_sim['Temp_Sim'] = df_sim['Temp_Base'] + delta_temp
 df_sim['Chuva_Sim'] = df_sim['Chuva_Base'] * (1 + delta_chuva_percentual / 100.0)
 
-# Criar a memória de Chuva Anterior exigida pelo Random Forest de Vazão
+# Memória de Chuva Anterior exigida pelo Random Forest de Vazão
 df_sim['Chuva_Ant_Base'] = df_sim['Chuva_Base'].shift(1).fillna(df_sim['Chuva_Base'].mean())
 df_sim['Chuva_Ant_Sim'] = df_sim['Chuva_Sim'].shift(1).fillna(df_sim['Chuva_Sim'].mean())
 
-# Cálculo auxiliar da ETP local (Thornthwaite) para o gráfico de solo
+# Cálculo auxiliar do Balanço de Solo (Gráfico de Excedente)
 I = np.sum((df_sim['Temp_Sim'] / 5.0) ** 1.514)
 a = (6.75e-7 * I**3) - (7.71e-5 * I**2) + (1.792e-2 * I) + 0.49239
 df_sim['ETP'] = 16 * ((10 * df_sim['Temp_Sim'] / I) ** a) * df_sim['Fator_F']
@@ -59,82 +57,67 @@ df_sim['Bal'] = df_sim['Chuva_Sim'] - df_sim['ETP']
 df_sim['EXC'] = df_sim['Bal'].apply(lambda x: x if x > 0 else 0)
 
 # =====================================================================
-# BLOCO 1: EXECUÇÃO DO RANDOM FOREST (ORDEM E NOMES ORIGINAIS)
+# 5. EXECUÇÃO DO MODELO RANDOM FOREST (PREDIÇÃO DA VAZÃO)
 # =====================================================================
-recursos_vazao = ['Mes', 'Precipitação', 'Chuva_Anterior', 'Tmed']
+vazao_base = []
+vazao_sim = []
 
-df_input_vaz_base = pd.DataFrame({
-    'Mes': df_base['Mês_Num'],
-    'Precipitação': df_base['Chuva_Base'],
-    'Chuva_Anterior': df_sim['Chuva_Ant_Base'],
-    'Tmed': df_base['Temp_Base']
-})[recursos_vazao].astype(np.float64)
-
-df_input_vaz_sim = pd.DataFrame({
-    'Mes': df_sim['Mês_Num'],
-    'Precipitação': df_sim['Chuva_Sim'],
-    'Chuva_Anterior': df_sim['Chuva_Ant_Sim'],
-    'Tmed': df_sim['Temp_Sim']
-})[recursos_vazao].astype(np.float64)
-
-# Predição matricial completa para evitar erros de tipo
-df_sim['Vazao_Base'] = model_rf.predict(df_input_vaz_base)
-df_sim['Vazao_Sim'] = model_rf.predict(df_input_vaz_sim)
-
-# =====================================================================
-# BLOCO 2: MODELAGEM DAS CHUVAS ACUMULADAS DE LONGO PERÍODO
-# =====================================================================
-def calcular_acumulado_mensal(series_chuva, dias):
-    acumulados = []
-    valores = list(series_chuva.values)
-    fator_meses = dias / 30.0
+for i in range(12):
+    features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
+    features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    for i in range(12):
-        if fator_meses == 1.5:
-            val = valores[i] + (valores[i-1] * 0.5)
-        elif fator_meses == 2.0:
-            val = valores[i] + valores[i-1]
-        else:
-            val = valores[i]
-        acumulados.append(val)
-    return acumulados
+    vazao_base.append(float(model_rf.predict(features_base)[0]))
+    vazao_sim.append(float(model_rf.predict(features_sim)[0]))
 
-df_sim['chuva_45_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 45)
-df_sim['chuva_45_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 45)
-df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 60)
-df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
+df_sim['Vazao_Base'] = vazao_base
+df_sim['Vazao_Sim'] = vazao_sim
 
 # =====================================================================
-# BLOCO 3: EXECUÇÃO DO XGBOOST (ORDEM E NOMES EXIGIDOS)
+# 6. CÁLCULO DIRETO DAS CHUVAS ACUMULADAS (45 E 60 DIAS)
 # =====================================================================
-recursos_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
+chuva_45_base, chuva_45_sim = [], []
+chuva_60_base, chuva_60_sim = [], []
 
-df_input_turb_base = pd.DataFrame({
-    'Precipitação': df_sim['Chuva_Base'],
-    'Vazão': df_sim['Vazao_Base'],
-    'Tmed': df_sim['Temp_Base'],
-    'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'],
-    'chuva_45_dias_acum': df_sim['chuva_45_dias_base'],
-    'chuva_60_dias_acum': df_sim['chuva_60_dias_base']
-})[recursos_turbidez].astype(np.float64)
+c_base = list(df_sim['Chuva_Base'].values)
+c_sim = list(df_sim['Chuva_Sim'].values)
 
-df_input_turb_sim = pd.DataFrame({
-    'Precipitação': df_sim['Chuva_Sim'],
-    'Vazão': df_sim['Vazao_Sim'],
-    'Tmed': df_sim['Temp_Sim'],
-    'chuva_30_dias_acum': df_sim['Chuva_Ant_Sim'],
-    'chuva_45_dias_acum': df_sim['chuva_45_dias_sim'],
-    'chuva_60_dias_acum': df_sim['chuva_60_dias_sim']
-})[recursos_turbidez].astype(np.float64)
+for i in range(12):
+    # Regra Simplificada de 45 dias: Mês anterior + metade do mês retrasado
+    chuva_45_base.append(c_base[i-1] + (c_base[i-2] * 0.5))
+    chuva_45_sim.append(c_sim[i-1] + (c_sim[i-2] * 0.5))
+    
+    # Regra Simplificada de 60 dias: Soma dos dois meses anteriores
+    chuva_60_base.append(c_base[i-1] + c_base[i-2])
+    chuva_60_sim.append(c_sim[i-1] + c_sim[i-2])
 
-turb_base_pred = model_xgb.predict(df_input_turb_base)
-turb_sim_pred = model_xgb.predict(df_input_turb_sim)
-
-df_sim['Turb_Base'] = [max(0.1, float(t)) for t in turb_base_pred]
-df_sim['Turb_Sim'] = [max(0.1, float(t)) for t in turb_sim_pred]
+df_sim['Chuva_45_Base'] = chuva_45_base
+df_sim['Chuva_45_Sim'] = chuva_45_sim
+df_sim['Chuva_60_Base'] = chuva_60_base
+df_sim['Chuva_60_Sim'] = chuva_60_sim
 
 # =====================================================================
-# BLOCO 4: ANÁLISE DE IMPACTO FINANCEIRO MÊS A MÊS
+# 7. EXECUÇÃO DO MODELO XGBOOST (PREDIÇÃO DA TURBIDEZ)
+# =====================================================================
+turb_base = []
+turb_sim = []
+
+for i in range(12):
+    # Passando estritamente as 3 variáveis que seu modelo espera, como matriz NumPy pura
+    # Ordem: 0 = Vazão, 1 = Chuva 45 dias, 2 = Chuva 60 dias
+    array_base = np.array([[df_sim['Vazao_Base'].iloc[i], df_sim['Chuva_45_Base'].iloc[i], df_sim['Chuva_60_Base'].iloc[i]]], dtype=np.float64)
+    array_sim = np.array([[df_sim['Vazao_Sim'].iloc[i], df_sim['Chuva_45_Sim'].iloc[i], df_sim['Chuva_60_Sim'].iloc[i]]], dtype=np.float64)
+    
+    t_base = float(model_xgb.predict(array_base)[0])
+    t_sim = float(model_xgb.predict(array_sim)[0])
+    
+    turb_base.append(max(0.1, t_base))
+    turb_sim.append(max(0.1, t_sim))
+
+df_sim['Turb_Base'] = turb_base
+df_sim['Turb_Sim'] = turb_sim
+
+# =====================================================================
+# 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS
 # =====================================================================
 TURB_MEDIA_HISTORICA = 46.0
 FATOR_SENSIBILIDADE_CUSTO = 0.1162
@@ -153,7 +136,7 @@ for i in range(12):
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 
 # =====================================================================
-# BLOCO 5: INDICADORES E CONSTRUÇÃO INTERFACE GRÁFICA
+# 9. EXIBIÇÃO DOS INDICADORES DE TOPO
 # =====================================================================
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
@@ -167,8 +150,11 @@ col3.metric("🚨 Vazão Fina (Agosto)", f"{queda_vazao_ago:.1f} %")
 pico_custo_mensal = max(custos_incremento_mensal)
 col4.metric("💰 Pico de Custo Químico", f"+{pico_custo_mensal:.2f} %")
 
+# =====================================================================
+# 10. CONSTRUÇÃO DOS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO)
+# =====================================================================
 st.markdown("### 📊 Comportamento Sazonal da Vazão e Excedente Hídrico")
-fig1, ax1 = plt.subplots(figsize=(11, 3.8))
+fig1, ax1 = plt.subplots(figsize=(11, 3.5))
 ax2 = ax1.twinx()
 ax1.plot(df_sim['Mês'], df_sim['Vazao_Base'], 'g--', label='Vazão Histórica (m³/s)', alpha=0.7, linewidth=2)
 ax1.plot(df_sim['Mês'], df_sim['Vazao_Sim'], 'g-', label='Vazão sob Cenário Climático (m³/s)', linewidth=3)
@@ -186,27 +172,28 @@ st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
 col_graph1, col_grid2 = st.columns(2)
 
 with col_graph1:
-    st.markdown("#### Turbidez Projetada via XGBoost")
-    fig2, ax_t = plt.subplots(figsize=(6, 4))
+    st.markdown("#### Valor da Turbidez do Rio via XGBoost")
+    fig2, ax_t = plt.subplots(figsize=(6, 3.8))
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Média')
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
-    ax_t.axhline(y=TURB_MEDIA_HISTORICA, color='black', linestyle='--', alpha=0.5, label='Baseline (46 NTU)')
-    ax_t.set_ylabel('Turbidez da Água Bruta (NTU)')
+    ax_t.axhline(y=TURB_MEDIA_HISTORICA, color='black', linestyle='--', alpha=0.5, label='Média Base (46 NTU)')
+    ax_t.set_ylabel('Turbidez Bruta (NTU)')
     ax_t.set_xlabel('Mês')
     ax_t.legend(fontsize=9, loc='upper right')
     ax_t.grid(True, alpha=0.2)
     st.pyplot(fig2)
 
 with col_grid2:
-    st.markdown("#### Acréscimo nos Custos de Tratamento Químico")
-    fig3, ax_c = plt.subplots(figsize=(6, 4))
+    st.markdown("#### Custo do Tratamento Químico Mês a Mês")
+    fig3, ax_c = plt.subplots(figsize=(6, 3.8))
     ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
-    ax_c.set_ylabel('Aumento Percentual do Custo (%)')
+    ax_c.set_ylabel('Aumento no Custo de Tratamento (%)')
     ax_c.set_xlabel('Mês')
     ax_c.legend(fontsize=9, loc='upper right')
     ax_c.grid(True, alpha=0.2)
     st.pyplot(fig3)
 
+# 11. TABELA DE MATRIZ DE DADOS COMPLETA
 st.markdown("### 📝 Matriz de Variáveis Hidrológicas e Econômicas")
 df_exibicao = df_sim[['Mês', 'Chuva_Sim', 'Temp_Sim', 'Vazao_Sim', 'Turb_Base', 'Turb_Sim', 'Aumento_Custo_Pct']].copy()
 df_exibicao.columns = ['Mês', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Vazão Simulada (m³/s)', 'Turbidez Base (NTU)', 'Turbidez Simulada (NTU)', 'Aumento no Custo de Tratamento (%)']
