@@ -5,29 +5,25 @@ import matplotlib.pyplot as plt
 import joblib
 import xgboost as xgb
 
-# 1. Configuração da Página do Simulador
+# 1. CONFIGURAÇÃO DA PÁGINA DO SIMULADOR
 st.set_page_config(page_title="Impacto Climático - Pirassununga", layout="wide")
 st.title("🌊 Simulador de Impacto Climático no Abastecimento de Água")
 st.subheader("Município: Pirassununga - SP | Modelagem Hidrológica Integrada via Machine Learning")
 
-# Carregar os modelos treinados (Vazão e Turbidez) com tratamento de erros
+# Carregar os modelos treinados (Vazão e Turbidez) com tratamento de erros robusto
 try:
     model_rf = joblib.load('modelo_rf_vazao.pkl')
 except FileNotFoundError:
-    st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado. Certifique-se de fazer o upload dele.")
+    st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado. Certifique-se de fazer o upload dele no repositório.")
     st.stop()
 
-# Carregamento do modelo de Turbidez via joblib (formato .pkl)
 try:
     model_xgb = joblib.load('best_xgboost_model.pkl')
 except FileNotFoundError:
-    st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado no repositório. Certifique-se de fazer o upload dele.")
-    st.stop()
-except Exception as e:
-    st.error(f"❌ Erro ao carregar 'best_xgboost_model.pkl': {e}")
+    st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado. Certifique-se de fazer o upload dele no repositório.")
     st.stop()
 
-# 2. Dados Históricos Reais (Consolidados via Google Colab)
+# 2. DADOS HISTÓRICOS REAIS (CONSOLIDADOS VIA GOOGLE COLAB)
 dados_base = {
     'Mês_Num': list(range(1, 13)),
     'Mês': ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
@@ -37,7 +33,7 @@ dados_base = {
 }
 df_base = pd.DataFrame(dados_base)
 
-# 3. Painel Lateral Interativo (Controle Único por Temperatura)
+# 3. PAINEL LATERAL INTERATIVO (CONTROLE ÚNICO POR TEMPERATURA)
 st.sidebar.header("🎛️ Cenário de Aquecimento Global")
 st.sidebar.markdown("Altere a temperatura para recalcular a pluviosidade (IPCC) e projetar os impactos ambientais:")
 
@@ -47,7 +43,7 @@ delta_temp = st.sidebar.slider("Variação da Temperatura Média (°C)", min_val
 queda_chuva_por_grau = -0.07 
 delta_chuva_percentual = delta_temp * queda_chuva_por_grau * 100
 
-# 4. Processamento Hidrológico e Forçantes do IPCC
+# 4. PROCESSAMENTO HIDROLÓGICO E FORÇANTES DO IPCC
 df_sim = df_base.copy()
 df_sim['Temp_Sim'] = df_sim['Temp_Base'] + delta_temp
 df_sim['Chuva_Sim'] = df_sim['Chuva_Base'] * (1 + delta_chuva_percentual / 100.0)
@@ -70,10 +66,11 @@ vazao_base = []
 vazao_sim = []
 
 for i in range(12):
+    # Passando matrizes NumPy estruturadas bidimensionais float64
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    # Extrai o primeiro elemento numérico do array retornado utilizando o fatiador [0]
+    # Extração segura e limpa do escalar contido dentro do array retornado (.predict()[0])
     v_base = float(model_rf.predict(features_base)[0])
     v_sim = float(model_rf.predict(features_sim)[0])
     
@@ -93,8 +90,10 @@ def calcular_acumulado_mensal(series_chuva, dias):
     
     for i in range(12):
         if fator_meses == 1.5:
+            # 45 dias = Chuva do mês atual + metade do mês anterior (considerando loop anual)
             val = valores[i] + (valores[i-1] * 0.5)
         elif fator_meses == 2.0:
+            # 60 dias = Chuva do mês atual + mês anterior completo
             val = valores[i] + valores[i-1]
         else:
             val = valores[i]
@@ -108,36 +107,42 @@ df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 6
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA) - FIX CORRETOR DE TIPAGEM
+# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ VIA DMATRIX - CORREÇÃO BLINDADA)
 # =====================================================================
+# Nome e ordem exata das features salvos no booster interno do modelo .pkl do Colab
 recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
 
 turb_base = []
 turb_sim = []
 
 for i in range(12):
-    # Cria os DataFrames estruturados garantindo a tipagem float64 do NumPy exigida pelo pkl do XGBoost
-    df_input_base = pd.DataFrame([{
-        'Precipitação': df_sim['Chuva_Base'].iloc[i],
-        'Vazão': df_sim['Vazao_Base'].iloc[i],
-        'Tmed': df_sim['Temp_Base'].iloc[i],
-        'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'].iloc[i],
-        'chuva_45_dias_acum': df_sim['chuva_45_dias_base'].iloc[i],
-        'chuva_60_dias_acum': df_sim['chuva_60_dias_base'].iloc[i]
-    }])[recursos_modelo_turbidez].astype(np.float64)
+    # Coleta as variáveis em matrizes numéricas comuns
+    matriz_base = np.array([[
+        df_sim['Chuva_Base'].iloc[i],
+        df_sim['Vazao_Base'].iloc[i],
+        df_sim['Temp_Base'].iloc[i],
+        df_sim['Chuva_Ant_Base'].iloc[i],
+        df_sim['chuva_45_dias_base'].iloc[i],
+        df_sim['chuva_60_dias_base'].iloc[i]
+    ]], dtype=np.float64)
     
-    df_input_sim = pd.DataFrame([{
-        'Precipitação': df_sim['Chuva_Sim'].iloc[i],
-        'Vazão': df_sim['Vazao_Sim'].iloc[i],
-        'Tmed': df_sim['Temp_Sim'].iloc[i],
-        'chuva_30_dias_acum': df_sim['Chuva_Ant_Sim'].iloc[i],
-        'chuva_45_dias_acum': df_sim['chuva_45_dias_sim'].iloc[i],
-        'chuva_60_dias_acum': df_sim['chuva_60_dias_sim'].iloc[i]
-    }])[recursos_modelo_turbidez].astype(np.float64)
+    matriz_sim = np.array([[
+        df_sim['Chuva_Sim'].iloc[i],
+        df_sim['Vazao_Sim'].iloc[i],
+        df_sim['Temp_Sim'].iloc[i],
+        df_sim['Chuva_Ant_Sim'].iloc[i],
+        df_sim['chuva_45_dias_sim'].iloc[i],
+        df_sim['chuva_60_dias_sim'].iloc[i]
+    ]], dtype=np.float64)
     
-    # CORREÇÃO CRUCIAL: O fatiador [0] foi movido para dentro da função float(), agindo direto na saída do predict()
-    t_base = float(model_xgb.predict(df_input_base)[0])
-    t_sim = float(model_xgb.predict(df_input_sim)[0])
+    # RESOLUÇÃO DEFINITIVA: Encapsula as matrizes no formato nativo xgb.DMatrix
+    # Isso injeta os rótulos textuais de forma limpa, forçando o validador a aceitar as colunas
+    dmatrix_base = xgb.DMatrix(matriz_base, feature_names=recursos_modelo_turbidez)
+    dmatrix_sim = xgb.DMatrix(matriz_sim, feature_names=recursos_modelo_turbidez)
+    
+    # Inferência preditiva extraindo o escalar do índice 0 do vetor retornado
+    t_base = float(model_xgb.predict(dmatrix_base)[0])
+    t_sim = float(model_xgb.predict(dmatrix_sim)[0])
     
     turb_base.append(max(0.1, t_base))
     turb_sim.append(max(0.1, t_sim))
@@ -155,8 +160,10 @@ custos_incremento_mensal = []
 
 for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
+    # Avalia a variação do cenário simulado em relação à linha de base (46 NTU)
     variacao_percentual_turb = ((t_atual - TURB_MEDIA_HISTORICA) / TURB_MEDIA_HISTORICA) * 100
     
+    # Se a turbidez ultrapassar a média, aplica a taxa de encarecimento químico
     if variacao_percentual_turb > 0:
         aumento_custo = variacao_percentual_turb * FATOR_SENSIBILIDADE_CUSTO
     else:
@@ -167,13 +174,13 @@ for i in range(12):
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 
 # =====================================================================
-# 9. APRESENTAÇÃO DOS INDICADORES NA TELA PRINCIPAL
+# 9. APRESENTAÇÃO DOS INDICADORES NA TELA PRINCIPAL (CORREÇÃO DE ILOC)
 # =====================================================================
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# Correção final: extraindo os escalares de Agosto mapeando a linha pelo índice
+# CORREÇÃO CRUCIAL: Adicionado os colchetes [7] para ler o valor do mês de Agosto
 v_sim_ago = df_sim['Vazao_Sim'].iloc[7]
 v_base_ago = df_sim['Vazao_Base'].iloc[7]
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
@@ -208,11 +215,3 @@ with col_graph1:
     st.markdown("#### Turbidez Projetada via XGBoost")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Média')
-    ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
-    ax_t.axhline(y=TURB_MEDIA_HISTORICA, color='black', linestyle='--', alpha=0.5, label='Baseline (46 NTU)')
-    ax_t.set_ylabel('Turbidez da Água Bruta (NTU)')
-    ax_t.set_xlabel('Mês')
-    ax_t.legend(fontsize=9, loc='upper right')
-    ax_t.grid(True, alpha=0.2)
-    st.pyplot(fig2)
-
