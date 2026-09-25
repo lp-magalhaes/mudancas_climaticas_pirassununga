@@ -67,8 +67,9 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    vazao_base.append(float(model_rf.predict(features_base)))
-    vazao_sim.append(float(model_rf.predict(features_sim)))
+    # FIX: Adicionado [0] para extrair o escalar de dentro do array do scikit-learn
+    vazao_base.append(float(model_rf.predict(features_base)[0]))
+    vazao_sim.append(float(model_rf.predict(features_sim)[0]))
 
 df_sim['Vazao_Base'] = vazao_base
 df_sim['Vazao_Sim'] = vazao_sim
@@ -103,7 +104,8 @@ turb_sim = []
 for i in range(12):
     # Ordem das features: Vazão, Chuva 45 dias, Chuva 60 dias
     array_sim = np.array([[df_sim['Vazao_Sim'].iloc[i], df_sim['Chuva_45_Sim'].iloc[i], df_sim['Chuva_60_Sim'].iloc[i]]], dtype=np.float64)
-    t_sim = float(model_xgb.predict(array_sim))
+    # FIX: Adicionado [0] para extrair o escalar de dentro do array do XGBoost
+    t_sim = float(model_xgb.predict(array_sim)[0])
     turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
