@@ -17,7 +17,7 @@ except FileNotFoundError:
     st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado. Certifique-se de fazer o upload dele.")
     st.stop()
 
-# AJUSTE CONFORME ESPECIFICADO: Carregamento do modelo de Turbidez via joblib (formato .pkl)
+# Carregamento do modelo de Turbidez via joblib (formato .pkl)
 try:
     model_xgb = joblib.load('best_xgboost_model.pkl')
 except FileNotFoundError:
@@ -73,8 +73,9 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    v_base = float(model_rf.predict(features_base))
-    v_sim = float(model_rf.predict(features_sim))
+    # CORREÇÃO: Extração explícita do índice [0] para evitar o TypeError no float()
+    v_base = float(model_rf.predict(features_base)[0])
+    v_sim = float(model_rf.predict(features_sim)[0])
     
     vazao_base.append(v_base)
     vazao_sim.append(v_sim)
@@ -113,7 +114,6 @@ turb_base = []
 turb_sim = []
 
 for i in range(12):
-    # Converte os dados para matriz limpa NumPy float64 bidimensional (conforme exigido pelo pkl do XGBoost)
     array_base = np.array([[
         df_sim['Chuva_Base'].iloc[i],
         df_sim['Vazao_Base'].iloc[i],
@@ -132,9 +132,9 @@ for i in range(12):
         df_sim['chuva_60_dias_sim'].iloc[i]
     ]], dtype=np.float64)
     
-    # Inferência preditiva via array numérico extraindo o escalar do índice zero
-    t_base = float(model_xgb.predict(array_base))
-    t_sim = float(model_xgb.predict(array_sim))
+    # Extração estável do índice [0] do array de predição do XGBoost
+    t_base = float(model_xgb.predict(array_base)[0])
+    t_sim = float(model_xgb.predict(array_sim)[0])
     
     turb_base.append(max(0.1, t_base))
     turb_sim.append(max(0.1, t_sim))
@@ -170,7 +170,6 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# Correção final: extraindo os escalares de Agosto mapeando a linha pelo índice [7]
 v_sim_ago = df_sim['Vazao_Sim'].iloc[7]
 v_base_ago = df_sim['Vazao_Base'].iloc[7]
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
@@ -224,3 +223,4 @@ with col_grid2:
     st.pyplot(fig3)
 
 # 11. Tabela de Dados Brutos Comparativos Expandida
+st.markdown("### 📝 Matriz de Variáveis Hidrológicas e Econômicas")
