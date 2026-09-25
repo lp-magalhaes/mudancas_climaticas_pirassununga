@@ -30,7 +30,6 @@ except Exception:
         st.stop()
 
 # 2. Dados Históricos Reais (Consolidados via Google Colab)
-# CORREÇÃO DEFINITIVA: Utiliza a função list(range()) para evitar problemas de ocultação de colchetes
 dados_base = {
     'Mês_Num': list(range(1, 13)),
     'Mês': ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
@@ -88,7 +87,6 @@ df_sim['Vazao_Sim'] = vazao_sim
 # =====================================================================
 # 6. MODELAGEM DA MEMÓRIA DE CHUVA ACUMULADA (45 E 60 DIAS)
 # =====================================================================
-# Função cíclica para calcular acumulados considerando a transição de Dezembro para Janeiro
 def calcular_acumulado_mensal(series_chuva, dias):
     acumulados = []
     valores = list(series_chuva.values)
@@ -96,17 +94,14 @@ def calcular_acumulado_mensal(series_chuva, dias):
     
     for i in range(12):
         if fator_meses == 1.5:
-            # 45 dias = Chuva do mês atual + metade do mês anterior
             val = valores[i] + (valores[i-1] * 0.5)
         elif fator_meses == 2.0:
-            # 60 dias = Chuva do mês atual + mês anterior completo
             val = valores[i] + valores[i-1]
         else:
             val = valores[i]
         acumulados.append(val)
     return acumulados
 
-# Aplica o cálculo de memória tanto na base quanto no cenário simulado
 df_sim['chuva_45_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 45)
 df_sim['chuva_45_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 45)
 
@@ -114,37 +109,37 @@ df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 6
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA)
+# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA) - FIX PARA O VALUEERROR
 # =====================================================================
+# Ordem e nomes estritos exigidos pelo Booster interno do XGBoost
 recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
 
 turb_base = []
 turb_sim = []
 
 for i in range(12):
-    map_base = {
+    # Estruturando em DataFrame com nomes de colunas explícitos (evita o erro de inplace_predict)
+    map_base = pd.DataFrame([{
         'Precipitação': df_sim['Chuva_Base'].iloc[i],
         'Vazão': df_sim['Vazao_Base'].iloc[i],
         'Tmed': df_sim['Temp_Base'].iloc[i],
         'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'].iloc[i],
         'chuva_45_dias_acum': df_sim['chuva_45_dias_base'].iloc[i],
         'chuva_60_dias_acum': df_sim['chuva_60_dias_base'].iloc[i]
-    }
+    }])[recursos_modelo_turbidez] # Garante a ordem exata das colunas do treino
     
-    map_sim = {
+    map_sim = pd.DataFrame([{
         'Precipitação': df_sim['Chuva_Sim'].iloc[i],
         'Vazão': df_sim['Vazao_Sim'].iloc[i],
         'Tmed': df_sim['Temp_Sim'].iloc[i],
         'chuva_30_dias_acum': df_sim['Chuva_Ant_Sim'].iloc[i],
         'chuva_45_dias_acum': df_sim['chuva_45_dias_sim'].iloc[i],
         'chuva_60_dias_acum': df_sim['chuva_60_dias_sim'].iloc[i]
-    }
+    }])[recursos_modelo_turbidez] # Garante a ordem exata das colunas do treino
     
-    features_base_turb = np.array([[map_base[col] for col in recursos_modelo_turbidez if col in map_base]])
-    features_sim_turb = np.array([[map_sim[col] for col in recursos_modelo_turbidez if col in map_sim]])
-    
-    t_base = float(model_xgb.predict(features_base_turb)[0])
-    t_sim = float(model_xgb.predict(features_sim_turb)[0])
+    # Inferência preditiva via DataFrame estruturado (corrige o problema de validação de features)
+    t_base = float(model_xgb.predict(map_base)[0])
+    t_sim = float(model_xgb.predict(map_sim)[0])
     
     turb_base.append(max(0.1, t_base))
     turb_sim.append(max(0.1, t_sim))
@@ -180,7 +175,7 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# CORREÇÃO: Fatiamento explícito ajustado para o índice 7 (Agosto)
+# Correção no fatiamento explícito com índice numérico para extração da vazão de Agosto (índice 7)
 queda_vazao_ago = ((df_sim['Vazao_Sim'].iloc[7] - df_sim['Vazao_Base'].iloc[7]) / df_sim['Vazao_Base'].iloc[7]) * 100
 col3.metric("🚨 Vazão Fina (Agosto)", f"{queda_vazao_ago:.1f} %")
 
@@ -215,3 +210,9 @@ with col_graph1:
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Média')
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
     ax_t.axhline(y=TURB_MEDIA_HISTORICA, color='black', linestyle='--', alpha=0.5, label='Baseline (46 NTU)')
+    ax_t.set_ylabel('Turbidez da Água Bruta (NTU)')
+    ax_t.set_xlabel('Mês')
+    ax_t.legend(fontsize=9, loc='upper right')
+    ax_t.grid(True, alpha=0.2)
+    st.pyplot(fig2)
+
