@@ -68,9 +68,9 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    # Executa as predições e desempacota o valor escalar contido no array
-    v_base = float(model_rf.predict(features_base)[0])
-    v_sim = float(model_rf.predict(features_sim)[0])
+    # Executa as predições e extrai o valor numérico
+    v_base = float(model_rf.predict(features_base))
+    v_sim = float(model_rf.predict(features_sim))
     
     vazao_base.append(v_base)
     vazao_sim.append(v_sim)
@@ -88,7 +88,7 @@ def calcular_acumulado_mensal(series_chuva, dias):
     
     for i in range(12):
         if fator_meses == 1.5:
-            # 45 dias = Chuva do mês atual + metade do mês anterior (considerando loop cíclico anual)
+            # 45 dias = Chuva do mês atual + metade do mês anterior
             val = valores[i] + (valores[i-1] * 0.5)
         elif fator_meses == 2.0:
             # 60 dias = Chuva do mês atual + mês anterior completo
@@ -105,9 +105,8 @@ df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 6
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (PREDIÇÃO EM MATRIZ COMPLETA DE UMA VEZ)
+# 7. EXECUÇÃO DO MODELO XGBOOST (PREDIÇÃO COM ARRAY NUMÉPICO PURO DO NUMPY)
 # =====================================================================
-# RESOLUÇÃO DEFINITIVA: Cria os DataFrames estruturados e indexados com as colunas na ordem exata do Colab
 recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
 
 df_input_base_completo = pd.DataFrame({
@@ -117,7 +116,7 @@ df_input_base_completo = pd.DataFrame({
     'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'],
     'chuva_45_dias_acum': df_sim['chuva_45_dias_base'],
     'chuva_60_dias_acum': df_sim['chuva_60_dias_base']
-})[recursos_modelo_turbidez].astype(np.float64)
+})[recursos_modelo_turbidez]
 
 df_input_sim_completo = pd.DataFrame({
     'Precipitação': df_sim['Chuva_Sim'],
@@ -126,11 +125,12 @@ df_input_sim_completo = pd.DataFrame({
     'chuva_30_dias_acum': df_sim['Chuva_Ant_Sim'],
     'chuva_45_dias_acum': df_sim['chuva_45_dias_sim'],
     'chuva_60_dias_acum': df_sim['chuva_60_dias_sim']
-})[recursos_modelo_turbidez].astype(np.float64)
+})[recursos_modelo_turbidez]
 
-# Predição em lote de todos os 12 meses simultâneos para evitar conflitos de dimensões com o .pkl
-turb_base_pred = model_xgb.predict(df_input_base_completo)
-turb_sim_pred = model_xgb.predict(df_input_sim_completo)
+# CORREÇÃO DEFINITIVA: Extrai .values para passar matrizes numéricas limpas do NumPy float64 ao .predict()
+# Isso limpa todos os metadados de rótulo de colunas e resolve o erro do dispatch_data_backend
+turb_base_pred = model_xgb.predict(df_input_base_completo.values.astype(np.float64))
+turb_sim_pred = model_xgb.predict(df_input_sim_completo.values.astype(np.float64))
 
 # Adiciona proteção física para garantir que a turbidez não fique abaixo de 0.1
 df_sim['Turb_Base'] = [max(0.1, float(t)) for t in turb_base_pred]
@@ -164,7 +164,7 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# Correção no fatiamento explícito com índice numérico para extração da vazão de Agosto (índice 7)
+# Extração de Agosto (Índice 7)
 v_sim_ago = df_sim['Vazao_Sim'].iloc[7]
 v_base_ago = df_sim['Vazao_Base'].iloc[7]
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
@@ -210,3 +210,4 @@ with col_graph1:
 with col_grid2:
     st.markdown("#### Acréscimo nos Custos de Tratamento Químico")
     fig3, ax_c = plt.subplots(figsize=(6, 4))
+    ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
