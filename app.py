@@ -151,14 +151,24 @@ col4.metric("💰 Pico de Custo Químico", f"+{pico_custo_mensal:.2f} %")
 # =====================================================================
 # 10. CONSTRUÇÃO DOS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO COM TRAVA LÓGICA)
 # =====================================================================
-st.markdown("### 📊 Comportamento Sazonal da Vazão e Excedente Hídrico")
-fig1, ax1 = plt.subplots(figsize=(11, 3.5))
-ax2 = ax1.twinx()
-ax1.plot(df_sim['Mês'], df_sim['Vazao_Base'], 'g--', label='Vazão Histórica (m³/s)', alpha=0.7, linewidth=2)
-ax1.plot(df_sim['Mês'], df_sim['Vazao_Sim'], 'g-', label='Vazão sob Cenário Climático (m³/s)', linewidth=3)
-ax1.legend(fontsize=9, loc='upper right')
-st.pyplot(fig1)
+st.markdown("### 📊 Comportamento Sazonal da Vazão via Machine Learning (Random Forest)")
 
+fig, ax1 = plt.subplots(figsize=(11, 4.5))
+ax2 = ax1.twinx()
+
+ax1.plot(df_sim['Mês'], df_sim['Vazao_Base'], 'g--', label='Vazão Histórica Estimada (m³/s)', alpha=0.7, linewidth=2)
+ax1.plot(df_sim['Mês'], df_sim['Vazao_Sim'], 'g-', label='Vazão sob Cenário Climático RF (m³/s)', linewidth=3)
+ax1.set_ylabel('Vazão do Rio (m³/s)', color='g', fontsize=12)
+ax1.tick_params(axis='y', labelcolor='g')
+ax1.set_ylim(0, max(df_sim['Vazao_Base'].max(), df_sim['Vazao_Sim'].max()) * 1.3)
+
+ax2.bar(df_sim['Mês'], df_sim['EXC'], color='blue', alpha=0.15, label='Excedente Hídrico Solo (mm)')
+ax2.set_ylabel('Excedente Hídrico (mm)', color='b', fontsize=12)
+ax2.tick_params(axis='y', labelcolor='b')
+
+ax1.set_xlabel('Mês', fontsize=12)
+fig.legend(loc="upper right", bbox_to_anchor=(0.85, 0.88))
+ax1.grid(True, alpha=0.3)
 st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
 col_graph1, col_grid2 = st.columns(2)
 
