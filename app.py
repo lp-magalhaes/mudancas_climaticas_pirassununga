@@ -85,16 +85,17 @@ c_base = list(df_sim['Chuva_Base'].values)
 c_sim = list(df_sim['Chuva_Sim'].values)
 
 for i in range(12):
-    # ant assume 11 (Dezembro) quando i é 0 (Janeiro)
-    ant = (i - 1) % 12       
+   # Índices com tratamento cíclico para o ano (0 a 11)
+    ant = (i - 1) % 12       # Se i=0 (Jan), ant=11 (Dez)
+    retr = (i - 2) % 12      # Se i=0 (Jan), retr=10 (Nov) | Se i=1 (Fev), retr=11 (Dez)
     
-    # Regra de 45 dias: Mês atual (30 dias) + metade do mês anterior (15 dias)
-    chuva_45_base.append(c_base[i] + (c_base[ant] * 0.5))
-    chuva_45_sim.append(c_sim[i] + (c_sim[ant] * 0.5))
+    # Regra de 45 dias: Mês atual + Mês anterior + metade do mês retrasado
+    chuva_45_base.append(c_base[ant] + (c_base[retr] * 0.5))
+    chuva_45_sim.append(c_sim[ant] + (c_sim[retr] * 0.5))
     
-    # Regra de 60 dias: Mês atual (30 dias) + mês anterior completo (30 dias)
-    chuva_60_base.append(c_base[i] + c_base[ant])
-    chuva_60_sim.append(c_sim[i] + c_sim[ant])
+    # Regra de 60 dias: Mês atual + Soma dos dois meses anteriores
+    chuva_60_base.append(c_base[ant] + c_base[retr])
+    chuva_60_sim.append(c_sim[ant] + c_sim[retr])
 
 df_sim['Chuva_45_Base'] = chuva_45_base
 df_sim['Chuva_45_Sim'] = chuva_45_sim
