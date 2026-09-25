@@ -186,7 +186,7 @@ with col_graph1:
     st.markdown("#### Valor da Turbidez do Rio via XGBoost")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     
-    ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Real')
+    #ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Real')
     ax_t.axhline(y=46.0, color='black', linestyle='--', alpha=0.5, label='Referência Média (46 NTU)')
     
     # A linha vermelha desaparece da tela caso o controle de aquecimento esteja em zero
