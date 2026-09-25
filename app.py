@@ -85,18 +85,34 @@ c_base = list(df_sim['Chuva_Base'].values)
 c_sim = list(df_sim['Chuva_Sim'].values)
 
 for i in range(12):
+    # Índices com tratamento cíclico para o ano (0 a 11)
+    ant = (i - 1) % 12       # Se i=0 (Jan), ant=11 (Dez)
+    retr = (i - 2) % 12      # Se i=0 (Jan), retr=10 (Nov) | Se i=1 (Fev), retr=11 (Dez)
+    
+    # Regra de 45 dias: Mês atual + Mês anterior + metade do mês retrasado
+    chuva_45_base.append(c_base[i] + c_base[ant] + (c_base[retr] * 0.5))
+    chuva_45_sim.append(c_sim[i] + c_sim[ant] + (c_sim[retr] * 0.5))
+    
+    # Regra de 60 dias: Mês atual + Soma dos dois meses anteriores
+    chuva_60_base.append(c_base[i] + c_base[ant] + c_base[retr])
+    chuva_60_sim.append(c_sim[i] + c_sim[ant] + c_sim[retr])
+
+#c_base = list(df_sim['Chuva_Base'].values)
+#c_sim = list(df_sim['Chuva_Sim'].values)
+
+#for i in range(12):
     # Regra de 45 dias: Mês anterior + metade do mês retrasado
-    chuva_45_base.append(c_base[i] + (c_base[i-1] * 0.5))
-    chuva_45_sim.append(c_sim[i] + (c_sim[i-1] * 0.5))
+ #   chuva_45_base.append(c_base[i] + (c_base[i-1] * 0.5))
+  #  chuva_45_sim.append(c_sim[i] + (c_sim[i-1] * 0.5))
     
     # Regra de 60 dias: Soma dos dois meses anteriores
-    chuva_60_base.append(c_base[i] + c_base[i-1])
-    chuva_60_sim.append(c_sim[i] + c_sim[i-1])
+   # chuva_60_base.append(c_base[i] + c_base[i-1])
+    #chuva_60_sim.append(c_sim[i] + c_sim[i-1])
 
-df_sim['Chuva_45_Base'] = chuva_45_base
-df_sim['Chuva_45_Sim'] = chuva_45_sim
-df_sim['Chuva_60_Base'] = chuva_60_base
-df_sim['Chuva_60_Sim'] = chuva_60_sim
+#df_sim['Chuva_45_Base'] = chuva_45_base
+#df_sim['Chuva_45_Sim'] = chuva_45_sim
+#df_sim['Chuva_60_Base'] = chuva_60_base
+#df_sim['Chuva_60_Sim'] = chuva_60_sim
 
 # =====================================================================
 # 7. EXECUÇÃO DO MODELO XGBOOST (PREDIÇÃO DA TURBIDEZ)
