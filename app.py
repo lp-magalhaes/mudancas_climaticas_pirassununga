@@ -66,11 +66,10 @@ vazao_base = []
 vazao_sim = []
 
 for i in range(12):
-    # Passando matrizes NumPy estruturadas bidimensionais float64
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    # Extração segura e limpa do escalar contido dentro do array retornado (.predict()[0])
+    # Executa a predição e extrai o valor numérico de dentro do array retornado
     v_base = float(model_rf.predict(features_base)[0])
     v_sim = float(model_rf.predict(features_sim)[0])
     
@@ -90,10 +89,8 @@ def calcular_acumulado_mensal(series_chuva, dias):
     
     for i in range(12):
         if fator_meses == 1.5:
-            # 45 dias = Chuva do mês atual + metade do mês anterior (considerando loop anual)
             val = valores[i] + (valores[i-1] * 0.5)
         elif fator_meses == 2.0:
-            # 60 dias = Chuva do mês atual + mês anterior completo
             val = valores[i] + valores[i-1]
         else:
             val = valores[i]
@@ -107,48 +104,36 @@ df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 6
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ VIA DMATRIX - CORREÇÃO BLINDADA)
+# 7. EXECUÇÃO DO MODELO XGBOOST (PREDIÇÃO EM MATRIZ COMPLETA DE UMA VEZ)
 # =====================================================================
-# Nome e ordem exata das features salvos no booster interno do modelo .pkl do Colab
+# Criação do DataFrame de entrada completo com os nomes exatos exigidos pelo scikit-learn do XGBoost
 recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
 
-turb_base = []
-turb_sim = []
+df_input_base_completo = pd.DataFrame({
+    'Precipitação': df_sim['Chuva_Base'],
+    'Vazão': df_sim['Vazao_Base'],
+    'Tmed': df_sim['Temp_Base'],
+    'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'],
+    'chuva_45_dias_acum': df_sim['chuva_45_dias_base'],
+    'chuva_60_dias_acum': df_sim['chuva_60_dias_base']
+})[recursos_modelo_turbidez].astype(np.float64)
 
-for i in range(12):
-    # Coleta as variáveis em matrizes numéricas comuns
-    matriz_base = np.array([[
-        df_sim['Chuva_Base'].iloc[i],
-        df_sim['Vazao_Base'].iloc[i],
-        df_sim['Temp_Base'].iloc[i],
-        df_sim['Chuva_Ant_Base'].iloc[i],
-        df_sim['chuva_45_dias_base'].iloc[i],
-        df_sim['chuva_60_dias_base'].iloc[i]
-    ]], dtype=np.float64)
-    
-    matriz_sim = np.array([[
-        df_sim['Chuva_Sim'].iloc[i],
-        df_sim['Vazao_Sim'].iloc[i],
-        df_sim['Temp_Sim'].iloc[i],
-        df_sim['Chuva_Ant_Sim'].iloc[i],
-        df_sim['chuva_45_dias_sim'].iloc[i],
-        df_sim['chuva_60_dias_sim'].iloc[i]
-    ]], dtype=np.float64)
-    
-    # RESOLUÇÃO DEFINITIVA: Encapsula as matrizes no formato nativo xgb.DMatrix
-    # Isso injeta os rótulos textuais de forma limpa, forçando o validador a aceitar as colunas
-    dmatrix_base = xgb.DMatrix(matriz_base, feature_names=recursos_modelo_turbidez)
-    dmatrix_sim = xgb.DMatrix(matriz_sim, feature_names=recursos_modelo_turbidez)
-    
-    # Inferência preditiva extraindo o escalar do índice 0 do vetor retornado
-    t_base = float(model_xgb.predict(dmatrix_base)[0])
-    t_sim = float(model_xgb.predict(dmatrix_sim)[0])
-    
-    turb_base.append(max(0.1, t_base))
-    turb_sim.append(max(0.1, t_sim))
+df_input_sim_completo = pd.DataFrame({
+    'Precipitação': df_sim['Chuva_Sim'],
+    'Vazão': df_sim['Vazao_Sim'],
+    'Tmed': df_sim['Temp_Sim'],
+    'chuva_30_dias_acum': df_sim['Chuva_Ant_Sim'],
+    'chuva_45_dias_acum': df_sim['chuva_45_dias_sim'],
+    'chuva_60_dias_acum': df_sim['chuva_60_dias_sim']
+})[recursos_modelo_turbidez].astype(np.float64)
 
-df_sim['Turb_Base'] = turb_base
-df_sim['Turb_Sim'] = turb_sim
+# Predição em lote de todos os 12 meses de uma vez (Evita erros de dimensões e tipos de dados)
+turb_base_pred = model_xgb.predict(df_input_base_completo)
+turb_sim_pred = model_xgb.predict(df_input_sim_completo)
+
+# Adiciona proteção física para garantir que a turbidez não fique abaixo de 0.1
+df_sim['Turb_Base'] = [max(0.1, float(t)) for t in turb_base_pred]
+df_sim['Turb_Sim'] = [max(0.1, float(t)) for t in turb_sim_pred]
 
 # =====================================================================
 # 8. CÁLCULO MÊS A MÊS DO AUMENTO DOS CUSTOS DE TRATAMENTO
@@ -160,10 +145,8 @@ custos_incremento_mensal = []
 
 for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
-    # Avalia a variação do cenário simulado em relação à linha de base (46 NTU)
     variacao_percentual_turb = ((t_atual - TURB_MEDIA_HISTORICA) / TURB_MEDIA_HISTORICA) * 100
     
-    # Se a turbidez ultrapassar a média, aplica a taxa de encarecimento químico
     if variacao_percentual_turb > 0:
         aumento_custo = variacao_percentual_turb * FATOR_SENSIBILIDADE_CUSTO
     else:
@@ -174,13 +157,13 @@ for i in range(12):
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 
 # =====================================================================
-# 9. APRESENTAÇÃO DOS INDICADORES NA TELA PRINCIPAL (CORREÇÃO DE ILOC)
+# 9. APRESENTAÇÃO DOS INDICADORES NA TELA PRINCIPAL
 # =====================================================================
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# CORREÇÃO CRUCIAL: Adicionado os colchetes [7] para ler o valor do mês de Agosto
+# Correção no fatiamento para Agosto (Índice 7)
 v_sim_ago = df_sim['Vazao_Sim'].iloc[7]
 v_base_ago = df_sim['Vazao_Base'].iloc[7]
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
@@ -215,3 +198,17 @@ with col_graph1:
     st.markdown("#### Turbidez Projetada via XGBoost")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Média')
+    ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
+    ax_t.axhline(y=TURB_MEDIA_HISTORICA, color='black', linestyle='--', alpha=0.5, label='Baseline (46 NTU)')
+    ax_t.set_ylabel('Turbidez da Água Bruta (NTU)')
+    ax_t.set_xlabel('Mês')
+    ax_t.legend(fontsize=9, loc='upper right')
+    ax_t.grid(True, alpha=0.2)
+    st.pyplot(fig2)
+
+with col_grid2:
+    st.markdown("#### Acréscimo nos Custos de Tratamento Químico")
+    fig3, ax_c = plt.subplots(figsize=(6, 4))
+    ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
+    ax_c.set_ylabel('Aumento Percentual do Custo (%)')
+    ax_c.set_xlabel('Mês')
