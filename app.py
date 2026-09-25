@@ -22,7 +22,7 @@ except FileNotFoundError:
     st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado no repositório.")
     st.stop()
 
-# 2. DADOS HISTÓRICOS REAIS E VALORES DE TURBIDEZ BASE INTERPOLADOS MÊS A MÊS
+# 2. DADOS HISTÓRICOS REAIS E VALORES DE TURBIDEZ BASE INTERPOLADOS
 dados_base = {
     'Mês_Num': list(range(1, 13)),
     'Mês': ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
@@ -67,9 +67,9 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    # Armazena o valor escalar de forma segura aplicando o fatiador correto
-    vazao_base.append(float(model_rf.predict(features_base)))
-    vazao_sim.append(float(model_rf.predict(features_sim)))
+    # CORREÇÃO DEFINITIVA: Adicionado explicito o fatiamento de índice [0] pós-predict
+    vazao_base.append(float(model_rf.predict(features_base)[0]))
+    vazao_sim.append(float(model_rf.predict(features_sim)[0]))
 
 df_sim['Vazao_Base'] = vazao_base
 df_sim['Vazao_Sim'] = vazao_sim
@@ -104,21 +104,21 @@ turb_sim = []
 for i in range(12):
     # Ordem das features: Vazão, Chuva 45 dias, Chuva 60 dias
     array_sim = np.array([[df_sim['Vazao_Sim'].iloc[i], df_sim['Chuva_45_Sim'].iloc[i], df_sim['Chuva_60_Sim'].iloc[i]]], dtype=np.float64)
-    # Armazena o valor escalar de forma segura aplicando o fatiador correto
-    t_sim = float(model_xgb.predict(array_sim))
+    # CORREÇÃO DEFINITIVA: Adicionado explicito o fatiamento de índice [0] pós-predict
+    t_sim = float(model_xgb.predict(array_sim)[0])
     turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
 
 # =====================================================================
-# 8. CÁLCULO DO CUSTO DO TRATAMENTO UTILIZANDO O VALOR BASE DE CADA MÊS
+# 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS
 # =====================================================================
 FATOR_SENSIBILIDADE_CUSTO = 0.1162
 
 custos_incremento_mensal = []
 for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
-    t_referencia_mes = df_sim['Turb_Base'].iloc[i] # Captura o valor base individual do respectivo mês
+    t_referencia_mes = df_sim['Turb_Base'].iloc[i]
     
     # Avalia o aumento percentual em relação à turbidez base real daquele mês específico
     variacao_percentual_turb = ((t_atual - t_referencia_mes) / t_referencia_mes) * 100
@@ -138,8 +138,8 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-v_sim_ago = float(df_sim['Vazao_Sim'].iloc)
-v_base_ago = float(df_sim['Vazao_Base'].iloc)
+v_sim_ago = float(df_sim['Vazao_Sim'].iloc[7])
+v_base_ago = float(df_sim['Vazao_Base'].iloc[7])
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
 col3.metric("🚨 Vazão Fina (Agosto)", f"{queda_vazao_ago:.1f} %")
 
@@ -163,13 +163,13 @@ with col_graph1:
     st.markdown("#### Valor da Turbidez do Rio via XGBoost")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     
-    # Sempre plota a curva base real contínua
+    # Sempre plota a curva base real
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Real')
     
-    # Inclusão da linha tracejada de referência média de 46 NTU
+    # Inclusão da linha de referência de 46 NTU
     ax_t.axhline(y=46.0, color='black', linestyle='--', alpha=0.5, label='Referência Média (46 NTU)')
     
-    # Mostra a curva simulada apenas se a seleção do slider for diferente de zero
+    # Mostra a curva simulada apenas se a seleção for diferente de zero
     if delta_temp != 0.0:
         ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
         
