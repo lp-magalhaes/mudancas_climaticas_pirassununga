@@ -156,6 +156,7 @@ fig1, ax1 = plt.subplots(figsize=(11, 3.5))
 ax2 = ax1.twinx()
 ax1.plot(df_sim['Mês'], df_sim['Vazao_Base'], 'g--', label='Vazão Histórica (m³/s)', alpha=0.7, linewidth=2)
 ax1.plot(df_sim['Mês'], df_sim['Vazao_Sim'], 'g-', label='Vazão sob Cenário Climático (m³/s)', linewidth=3)
+ax1.legend(fontsize=9, loc='upper right')
 st.pyplot(fig1)
 
 st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
