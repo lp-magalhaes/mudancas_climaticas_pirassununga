@@ -17,17 +17,15 @@ except FileNotFoundError:
     st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado. Certifique-se de fazer o upload dele.")
     st.stop()
 
+# AJUSTE CONFORME ESPECIFICADO: Carregamento do modelo de Turbidez via joblib (formato .pkl)
 try:
-    # Carrega o modelo campeão do XGBoost para Turbidez
-    model_xgb = xgb.XGBRegressor()
-    model_xgb.load_model('best_xgboost_model.json')
-except Exception:
-    try:
-        # Alternativa caso você tenha salvo o XGBoost em formato .pkl
-        model_xgb = joblib.load('best_xgboost_model.pkl')
-    except Exception:
-        st.error("❌ Erro: O arquivo do modelo de Turbidez ('best_xgboost_model.json' ou '.pkl') não foi encontrado.")
-        st.stop()
+    model_xgb = joblib.load('best_xgboost_model.pkl')
+except FileNotFoundError:
+    st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado no repositório. Certifique-se de fazer o upload dele.")
+    st.stop()
+except Exception as e:
+    st.error(f"❌ Erro ao carregar 'best_xgboost_model.pkl': {e}")
+    st.stop()
 
 # 2. Dados Históricos Reais (Consolidados via Google Colab)
 dados_base = {
@@ -72,11 +70,11 @@ vazao_base = []
 vazao_sim = []
 
 for i in range(12):
-    features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]])
-    features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]])
+    features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
+    features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    v_base = float(model_rf.predict(features_base)[0])
-    v_sim = float(model_rf.predict(features_sim)[0])
+    v_base = float(model_rf.predict(features_base))
+    v_sim = float(model_rf.predict(features_sim))
     
     vazao_base.append(v_base)
     vazao_sim.append(v_sim)
@@ -109,37 +107,34 @@ df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 6
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA) - FIX PARA O VALUEERROR
+# 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA) - MATRIZ NUMPY PURA
 # =====================================================================
-# Ordem e nomes estritos exigidos pelo Booster interno do XGBoost
-recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
-
 turb_base = []
 turb_sim = []
 
 for i in range(12):
-    # Estruturando em DataFrame com nomes de colunas explícitos (evita o erro de inplace_predict)
-    map_base = pd.DataFrame([{
-        'Precipitação': df_sim['Chuva_Base'].iloc[i],
-        'Vazão': df_sim['Vazao_Base'].iloc[i],
-        'Tmed': df_sim['Temp_Base'].iloc[i],
-        'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'].iloc[i],
-        'chuva_45_dias_acum': df_sim['chuva_45_dias_base'].iloc[i],
-        'chuva_60_dias_acum': df_sim['chuva_60_dias_base'].iloc[i]
-    }])[recursos_modelo_turbidez] # Garante a ordem exata das colunas do treino
+    # Converte os dados para matriz limpa NumPy float64 bidimensional (conforme exigido pelo pkl do XGBoost)
+    array_base = np.array([[
+        df_sim['Chuva_Base'].iloc[i],
+        df_sim['Vazao_Base'].iloc[i],
+        df_sim['Temp_Base'].iloc[i],
+        df_sim['Chuva_Ant_Base'].iloc[i],
+        df_sim['chuva_45_dias_base'].iloc[i],
+        df_sim['chuva_60_dias_base'].iloc[i]
+    ]], dtype=np.float64)
     
-    map_sim = pd.DataFrame([{
-        'Precipitação': df_sim['Chuva_Sim'].iloc[i],
-        'Vazão': df_sim['Vazao_Sim'].iloc[i],
-        'Tmed': df_sim['Temp_Sim'].iloc[i],
-        'chuva_30_dias_acum': df_sim['Chuva_Ant_Sim'].iloc[i],
-        'chuva_45_dias_acum': df_sim['chuva_45_dias_sim'].iloc[i],
-        'chuva_60_dias_acum': df_sim['chuva_60_dias_sim'].iloc[i]
-    }])[recursos_modelo_turbidez] # Garante a ordem exata das colunas do treino
+    array_sim = np.array([[
+        df_sim['Chuva_Sim'].iloc[i],
+        df_sim['Vazao_Sim'].iloc[i],
+        df_sim['Temp_Sim'].iloc[i],
+        df_sim['Chuva_Ant_Sim'].iloc[i],
+        df_sim['chuva_45_dias_sim'].iloc[i],
+        df_sim['chuva_60_dias_sim'].iloc[i]
+    ]], dtype=np.float64)
     
-    # Inferência preditiva via DataFrame estruturado (corrige o problema de validação de features)
-    t_base = float(model_xgb.predict(map_base)[0])
-    t_sim = float(model_xgb.predict(map_sim)[0])
+    # Inferência preditiva via array numérico extraindo o escalar do índice zero
+    t_base = float(model_xgb.predict(array_base))
+    t_sim = float(model_xgb.predict(array_sim))
     
     turb_base.append(max(0.1, t_base))
     turb_sim.append(max(0.1, t_sim))
@@ -175,8 +170,10 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# Correção no fatiamento explícito com índice numérico para extração da vazão de Agosto (índice 7)
-queda_vazao_ago = ((df_sim['Vazao_Sim'].iloc[7] - df_sim['Vazao_Base'].iloc[7]) / df_sim['Vazao_Base'].iloc[7]) * 100
+# Correção final: extraindo os escalares de Agosto mapeando a linha pelo índice [7]
+v_sim_ago = df_sim['Vazao_Sim'].iloc[7]
+v_base_ago = df_sim['Vazao_Base'].iloc[7]
+queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
 col3.metric("🚨 Vazão Fina (Agosto)", f"{queda_vazao_ago:.1f} %")
 
 pico_custo_mensal = max(custos_incremento_mensal)
@@ -216,3 +213,14 @@ with col_graph1:
     ax_t.grid(True, alpha=0.2)
     st.pyplot(fig2)
 
+with col_grid2:
+    st.markdown("#### Acréscimo nos Custos de Tratamento Químico")
+    fig3, ax_c = plt.subplots(figsize=(6, 4))
+    ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
+    ax_c.set_ylabel('Aumento Percentual do Custo (%)')
+    ax_c.set_xlabel('Mês')
+    ax_c.legend(fontsize=9, loc='upper right')
+    ax_c.grid(True, alpha=0.2)
+    st.pyplot(fig3)
+
+# 11. Tabela de Dados Brutos Comparativos Expandida
