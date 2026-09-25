@@ -97,6 +97,11 @@ for i in range(12):
     chuva_60_base.append(c_base[i] + c_base[ant] + c_base[retr])
     chuva_60_sim.append(c_sim[i] + c_sim[ant] + c_sim[retr])
 
+df_sim['Chuva_45_Base'] = chuva_45_base
+df_sim['Chuva_45_Sim'] = chuva_45_sim
+df_sim['Chuva_60_Base'] = chuva_60_base
+df_sim['Chuva_60_Sim'] = chuva_60_sim
+
 #c_base = list(df_sim['Chuva_Base'].values)
 #c_sim = list(df_sim['Chuva_Sim'].values)
 
