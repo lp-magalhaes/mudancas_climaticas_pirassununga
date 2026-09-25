@@ -169,6 +169,8 @@ ax2.tick_params(axis='y', labelcolor='b')
 ax1.set_xlabel('Mês', fontsize=12)
 fig.legend(loc="upper right", bbox_to_anchor=(0.85, 0.88))
 ax1.grid(True, alpha=0.3)
+st.pyplot(fig)
+
 st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
 col_graph1, col_grid2 = st.columns(2)
 
