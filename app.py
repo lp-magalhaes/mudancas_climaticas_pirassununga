@@ -122,22 +122,25 @@ df_sim['Turb_Sim'] = turb_sim
 # 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS
 # =====================================================================
 FATOR_SENSIBILIDADE_CUSTO = 0.1162
+TURBIDEZ_MEDIA = 46
 
 custos_incremento_mensal = []
 for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
-    t_referencia_mes = df_sim['Turb_Base'].iloc[i]
     
-    variacao_percentual_turb = ((t_atual - t_referencia_mes) / t_referencia_mes) * 100
+    # Nova lógica: Subtração da turbidez atual pela média (46)
+    diferenca_turb = t_atual - TURBIDEZ_MEDIA
     
-    if variacao_percentual_turb > 0:
-        aumento_custo = variacao_percentual_turb * FATOR_SENSIBILIDADE_CUSTO
+    # O custo aumenta se a turbidez atual for maior que a média
+    if diferenca_turb > 0:
+        aumento_custo = diferenca_turb * FATOR_SENSIBILIDADE_CUSTO
     else:
         aumento_custo = 0.0
+        
     custos_incremento_mensal.append(aumento_custo)
 
+# Atribuindo os novos valores de custo ao DataFrame
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
-
 # =====================================================================
 # 9. EXIBIÇÃO DOS INDICADORES DE TOPO
 # =====================================================================
