@@ -67,9 +67,8 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    # FIX: Adicionado [0] para extrair o escalar de dentro do array do scikit-learn
-    vazao_base.append(float(model_rf.predict(features_base)[0]))
-    vazao_sim.append(float(model_rf.predict(features_sim)[0]))
+    vazao_base.append(float(model_rf.predict(features_base)))
+    vazao_sim.append(float(model_rf.predict(features_sim)))
 
 df_sim['Vazao_Base'] = vazao_base
 df_sim['Vazao_Sim'] = vazao_sim
@@ -104,8 +103,7 @@ turb_sim = []
 for i in range(12):
     # Ordem das features: Vazão, Chuva 45 dias, Chuva 60 dias
     array_sim = np.array([[df_sim['Vazao_Sim'].iloc[i], df_sim['Chuva_45_Sim'].iloc[i], df_sim['Chuva_60_Sim'].iloc[i]]], dtype=np.float64)
-    # FIX: Adicionado [0] para extrair o escalar de dentro do array do XGBoost
-    t_sim = float(model_xgb.predict(array_sim)[0])
+    t_sim = float(model_xgb.predict(array_sim))
     turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
@@ -147,7 +145,7 @@ pico_custo_mensal = max(custos_incremento_mensal)
 col4.metric("💰 Pico de Custo Químico", f"+{pico_custo_mensal:.2f} %")
 
 # =====================================================================
-# 10. CONSTRUÇÃO DOS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO)
+# 10. CONSTRUÇÃO DOS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO COM TRAVA LÓGICA)
 # =====================================================================
 st.markdown("### 📊 Comportamento Sazonal da Vazão e Excedente Hídrico")
 fig1, ax1 = plt.subplots(figsize=(11, 3.5))
@@ -162,8 +160,17 @@ col_graph1, col_grid2 = st.columns(2)
 with col_graph1:
     st.markdown("#### Valor da Turbidez do Rio via XGBoost")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
+    
+    # Sempre plota a curva base real
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Real')
-    ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
+    
+    # ATUALIZAÇÃO REQUERIDA: Inclusão da linha de referência de 46 NTU solicitada
+    ax_t.axhline(y=46.0, color='black', linestyle='--', alpha=0.5, label='Referência Média (46 NTU)')
+    
+    # ATUALIZAÇÃO REQUERIDA: Mostra a curva simulada apenas se a seleção for diferente de zero
+    if delta_temp != 0.0:
+        ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
+        
     ax_t.set_ylabel('Turbidez Bruta (NTU)')
     ax_t.set_xlabel('Mês')
     ax_t.legend(fontsize=9, loc='upper right')
