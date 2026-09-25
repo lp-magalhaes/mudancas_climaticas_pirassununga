@@ -7,19 +7,19 @@ import joblib
 # 1. CONFIGURAÇÃO DA PÁGINA DO SIMULADOR
 st.set_page_config(page_title="Impacto Climático - Pirassununga", layout="wide")
 st.title("🌊 Simulador de Impacto Climático no Abastecimento de Água")
-st.subheader("Município: Pirassununga - SP | Modelagem Hidrológica via Blocos Independentes")
+st.subheader("Município: Pirassununga - SP | Modelagem Hidrológica Integrada via Machine Learning")
 
-# Carregar os modelos treinados com tratamento de erros isolado
+# Carregar os modelos treinados com tratamento de erros robusto
 try:
     model_rf = joblib.load('modelo_rf_vazao.pkl')
 except FileNotFoundError:
-    st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado. Certifique-se de fazer o upload dele no repositório.")
+    st.error("❌ Erro: O arquivo 'modelo_rf_vazao.pkl' não foi encontrado no repositório. Certifique-se de fazer o upload dele.")
     st.stop()
 
 try:
     model_xgb = joblib.load('best_xgboost_model.pkl')
 except FileNotFoundError:
-    st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado. Certifique-se de fazer o upload dele no repositório.")
+    st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado no repositório. Certifique-se de fazer o upload dele.")
     st.stop()
 
 # 2. DADOS HISTÓRICOS REAIS (CONSOLIDADOS VIA GOOGLE COLAB)
@@ -59,28 +59,30 @@ df_sim['Bal'] = df_sim['Chuva_Sim'] - df_sim['ETP']
 df_sim['EXC'] = df_sim['Bal'].apply(lambda x: x if x > 0 else 0)
 
 # =====================================================================
-# BLOCO LINEAR 1: EXECUÇÃO ISOLADA DO MODELO RANDOM FOREST (VAZÃO)
+# BLOCO 1: EXECUÇÃO DO RANDOM FOREST (ORDEM E NOMES ORIGINAIS)
 # =====================================================================
-vazao_base = []
-vazao_sim = []
+recursos_vazao = ['Mes', 'Precipitação', 'Chuva_Anterior', 'Tmed']
 
-for i in range(12):
-    # Formato original exigido pelo seu modelo de vazão: [Mes, Precipitação, Chuva_Anterior, Tmed]
-    features_base = np.array([[float(df_base['Mês_Num'].iloc[i]), float(df_base['Chuva_Base'].iloc[i]), float(df_sim['Chuva_Ant_Base'].iloc[i]), float(df_base['Temp_Base'].iloc[i])]], dtype=np.float64)
-    features_sim = np.array([[float(df_sim['Mês_Num'].iloc[i]), float(df_sim['Chuva_Sim'].iloc[i]), float(df_sim['Chuva_Ant_Sim'].iloc[i]), float(df_sim['Temp_Sim'].iloc[i])]], dtype=np.float64)
-    
-    # Executa o predict extraindo o valor escalar contido no array para limpar metadados
-    v_base = float(model_rf.predict(features_base)[0])
-    v_sim = float(model_rf.predict(features_sim)[0])
-    
-    vazao_base.append(v_base)
-    vazao_sim.append(v_sim)
+df_input_vaz_base = pd.DataFrame({
+    'Mes': df_base['Mês_Num'],
+    'Precipitação': df_base['Chuva_Base'],
+    'Chuva_Anterior': df_sim['Chuva_Ant_Base'],
+    'Tmed': df_base['Temp_Base']
+})[recursos_vazao].astype(np.float64)
 
-df_sim['Vazao_Base'] = vazao_base
-df_sim['Vazao_Sim'] = vazao_sim
+df_input_vaz_sim = pd.DataFrame({
+    'Mes': df_sim['Mês_Num'],
+    'Precipitação': df_sim['Chuva_Sim'],
+    'Chuva_Anterior': df_sim['Chuva_Ant_Sim'],
+    'Tmed': df_sim['Temp_Sim']
+})[recursos_vazao].astype(np.float64)
+
+# Predição matricial completa para evitar erros de tipo
+df_sim['Vazao_Base'] = model_rf.predict(df_input_vaz_base)
+df_sim['Vazao_Sim'] = model_rf.predict(df_input_vaz_sim)
 
 # =====================================================================
-# BLOCO LINEAR 2: MODELAGEM INDEPENDENTE DOS ACUMULADOS DE CHUVA
+# BLOCO 2: MODELAGEM DAS CHUVAS ACUMULADAS DE LONGO PERÍODO
 # =====================================================================
 def calcular_acumulado_mensal(series_chuva, dias):
     acumulados = []
@@ -103,46 +105,41 @@ df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 6
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# BLOCO LINEAR 3: EXECUÇÃO ISOLADA DO MODELO XGBOOST (TURBIDEZ)
+# BLOCO 3: EXECUÇÃO DO XGBOOST (ORDEM E NOMES EXIGIDOS)
 # =====================================================================
-# Montagem de matrizes numéricas puras estruturadas em lote para os 12 meses
-# Preditores ordenados: 0: Precipitação, 1: Vazão, 2: Tmed, 3: chuva_30, 4: chuva_45, 5: chuva_60
-recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
+recursos_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
 
-df_input_base_completo = pd.DataFrame({
+df_input_turb_base = pd.DataFrame({
     'Precipitação': df_sim['Chuva_Base'],
     'Vazão': df_sim['Vazao_Base'],
     'Tmed': df_sim['Temp_Base'],
     'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'],
     'chuva_45_dias_acum': df_sim['chuva_45_dias_base'],
     'chuva_60_dias_acum': df_sim['chuva_60_dias_base']
-})[recursos_modelo_turbidez]
+})[recursos_turbidez].astype(np.float64)
 
-df_input_sim_completo = pd.DataFrame({
+df_input_turb_sim = pd.DataFrame({
     'Precipitação': df_sim['Chuva_Sim'],
     'Vazão': df_sim['Vazao_Sim'],
     'Tmed': df_sim['Temp_Sim'],
     'chuva_30_dias_acum': df_sim['Chuva_Ant_Sim'],
     'chuva_45_dias_acum': df_sim['chuva_45_dias_sim'],
     'chuva_60_dias_acum': df_sim['chuva_60_dias_sim']
-})[recursos_modelo_turbidez]
+})[recursos_turbidez].astype(np.float64)
 
-# RESOLUÇÃO DO PROCESSO: O predict recebe .values (matriz NumPy pura float64) de uma única vez
-turb_base_pred = model_xgb.predict(df_input_base_completo.values.astype(np.float64))
-turb_sim_pred = model_xgb.predict(df_input_sim_completo.values.astype(np.float64))
+turb_base_pred = model_xgb.predict(df_input_turb_base)
+turb_sim_pred = model_xgb.predict(df_input_turb_sim)
 
-# Adiciona proteção física para garantir que a turbidez não fique abaixo de 0.1 NTU
 df_sim['Turb_Base'] = [max(0.1, float(t)) for t in turb_base_pred]
 df_sim['Turb_Sim'] = [max(0.1, float(t)) for t in turb_sim_pred]
 
 # =====================================================================
-# BLOCO LINEAR 4: ANÁLISE DE IMPACTO FINANCEIRO MÊS A MÊS
+# BLOCO 4: ANÁLISE DE IMPACTO FINANCEIRO MÊS A MÊS
 # =====================================================================
 TURB_MEDIA_HISTORICA = 46.0
 FATOR_SENSIBILIDADE_CUSTO = 0.1162
 
 custos_incremento_mensal = []
-
 for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
     variacao_percentual_turb = ((t_atual - TURB_MEDIA_HISTORICA) / TURB_MEDIA_HISTORICA) * 100
@@ -151,30 +148,25 @@ for i in range(12):
         aumento_custo = variacao_percentual_turb * FATOR_SENSIBILIDADE_CUSTO
     else:
         aumento_custo = 0.0
-        
     custos_incremento_mensal.append(aumento_custo)
 
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 
 # =====================================================================
-# 5. APRESENTAÇÃO DOS INDICADORES NA TELA PRINCIPAL
+# BLOCO 5: INDICADORES E CONSTRUÇÃO INTERFACE GRÁFICA
 # =====================================================================
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# Extração da vazão de Agosto utilizando indexação posicional pura do Pandas (.iloc[7])
-v_sim_ago = df_sim['Vazao_Sim'].iloc[7]
-v_base_ago = df_sim['Vazao_Base'].iloc[7]
+v_sim_ago = float(df_sim['Vazao_Sim'].iloc[7])
+v_base_ago = float(df_sim['Vazao_Base'].iloc[7])
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
 col3.metric("🚨 Vazão Fina (Agosto)", f"{queda_vazao_ago:.1f} %")
 
 pico_custo_mensal = max(custos_incremento_mensal)
 col4.metric("💰 Pico de Custo Químico", f"+{pico_custo_mensal:.2f} %")
 
-# =====================================================================
-# 6. CONSTRUÇÃO GRÁFICA DO PAINEL DE SIMULAÇÃO
-# =====================================================================
 st.markdown("### 📊 Comportamento Sazonal da Vazão e Excedente Hídrico")
 fig1, ax1 = plt.subplots(figsize=(11, 3.8))
 ax2 = ax1.twinx()
@@ -190,7 +182,6 @@ fig1.legend(loc="upper right", bbox_to_anchor=(0.85, 0.88))
 ax1.grid(True, alpha=0.2)
 st.pyplot(fig1)
 
-# PAINEL DUPLO: Turbidez e Impacto Econômico
 st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
 col_graph1, col_grid2 = st.columns(2)
 
@@ -208,3 +199,15 @@ with col_graph1:
 
 with col_grid2:
     st.markdown("#### Acréscimo nos Custos de Tratamento Químico")
+    fig3, ax_c = plt.subplots(figsize=(6, 4))
+    ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
+    ax_c.set_ylabel('Aumento Percentual do Custo (%)')
+    ax_c.set_xlabel('Mês')
+    ax_c.legend(fontsize=9, loc='upper right')
+    ax_c.grid(True, alpha=0.2)
+    st.pyplot(fig3)
+
+st.markdown("### 📝 Matriz de Variáveis Hidrológicas e Econômicas")
+df_exibicao = df_sim[['Mês', 'Chuva_Sim', 'Temp_Sim', 'Vazao_Sim', 'Turb_Base', 'Turb_Sim', 'Aumento_Custo_Pct']].copy()
+df_exibicao.columns = ['Mês', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Vazão Simulada (m³/s)', 'Turbidez Base (NTU)', 'Turbidez Simulada (NTU)', 'Aumento no Custo de Tratamento (%)']
+st.dataframe(df_exibicao.round(2), use_container_width=True)
