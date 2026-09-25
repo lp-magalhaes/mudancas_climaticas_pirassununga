@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import joblib
+import statistics
 
 # 1. CONFIGURAÇÃO DA PÁGINA DO SIMULADOR
 st.set_page_config(page_title="Impacto Climático - Pirassununga", layout="wide")
@@ -145,7 +146,7 @@ v_base_ago = float(df_sim['Vazao_Base'].iloc[10])
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
 col3.metric("🚨 Variação da menor vazão", f"{queda_vazao_ago:.1f} %")
 
-pico_custo_mensal = mean(custos_incremento_mensal)
+pico_custo_mensal = statistics.mean(custos_incremento_mensal)
 col4.metric("💰 Variação média custo", f"+{pico_custo_mensal:.2f} %")
 
 # =====================================================================
