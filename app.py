@@ -7,9 +7,9 @@ import joblib
 # 1. CONFIGURAÇÃO DA PÁGINA DO SIMULADOR
 st.set_page_config(page_title="Impacto Climático - Pirassununga", layout="wide")
 st.title("🌊 Simulador de Impacto Climático no Abastecimento de Água")
-st.subheader("Município: Pirassununga - SP | Modelagem Hidrológica Integrada via Machine Learning")
+st.subheader("Município: Pirassununga - SP | Modelagem Hidrológica via Blocos Independentes")
 
-# Carregar os modelos treinados com tratamento de erros integrado
+# Carregar os modelos treinados com tratamento de erros isolado
 try:
     model_rf = joblib.load('modelo_rf_vazao.pkl')
 except FileNotFoundError:
@@ -59,18 +59,19 @@ df_sim['Bal'] = df_sim['Chuva_Sim'] - df_sim['ETP']
 df_sim['EXC'] = df_sim['Bal'].apply(lambda x: x if x > 0 else 0)
 
 # =====================================================================
-# 5. EXECUÇÃO DO MODELO RANDOM FOREST (VAZÃO EM TEMPO REAL)
+# BLOCO LINEAR 1: EXECUÇÃO ISOLADA DO MODELO RANDOM FOREST (VAZÃO)
 # =====================================================================
 vazao_base = []
 vazao_sim = []
 
 for i in range(12):
-    features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
-    features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
+    # Formato original exigido pelo seu modelo de vazão: [Mes, Precipitação, Chuva_Anterior, Tmed]
+    features_base = np.array([[float(df_base['Mês_Num'].iloc[i]), float(df_base['Chuva_Base'].iloc[i]), float(df_sim['Chuva_Ant_Base'].iloc[i]), float(df_base['Temp_Base'].iloc[i])]], dtype=np.float64)
+    features_sim = np.array([[float(df_sim['Mês_Num'].iloc[i]), float(df_sim['Chuva_Sim'].iloc[i]), float(df_sim['Chuva_Ant_Sim'].iloc[i]), float(df_sim['Temp_Sim'].iloc[i])]], dtype=np.float64)
     
-    # Executa as predições e extrai o valor numérico
-    v_base = float(model_rf.predict(features_base))
-    v_sim = float(model_rf.predict(features_sim))
+    # Executa o predict extraindo o valor escalar contido no array para limpar metadados
+    v_base = float(model_rf.predict(features_base)[0])
+    v_sim = float(model_rf.predict(features_sim)[0])
     
     vazao_base.append(v_base)
     vazao_sim.append(v_sim)
@@ -79,7 +80,7 @@ df_sim['Vazao_Base'] = vazao_base
 df_sim['Vazao_Sim'] = vazao_sim
 
 # =====================================================================
-# 6. MODELAGEM DA MEMÓRIA DE CHUVA ACUMULADA (45 E 60 DIAS)
+# BLOCO LINEAR 2: MODELAGEM INDEPENDENTE DOS ACUMULADOS DE CHUVA
 # =====================================================================
 def calcular_acumulado_mensal(series_chuva, dias):
     acumulados = []
@@ -88,10 +89,8 @@ def calcular_acumulado_mensal(series_chuva, dias):
     
     for i in range(12):
         if fator_meses == 1.5:
-            # 45 dias = Chuva do mês atual + metade do mês anterior
             val = valores[i] + (valores[i-1] * 0.5)
         elif fator_meses == 2.0:
-            # 60 dias = Chuva do mês atual + mês anterior completo
             val = valores[i] + valores[i-1]
         else:
             val = valores[i]
@@ -100,13 +99,14 @@ def calcular_acumulado_mensal(series_chuva, dias):
 
 df_sim['chuva_45_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 45)
 df_sim['chuva_45_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 45)
-
 df_sim['chuva_60_dias_base'] = calcular_acumulado_mensal(df_sim['Chuva_Base'], 60)
 df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (PREDIÇÃO COM ARRAY NUMÉPICO PURO DO NUMPY)
+# BLOCO LINEAR 3: EXECUÇÃO ISOLADA DO MODELO XGBOOST (TURBIDEZ)
 # =====================================================================
+# Montagem de matrizes numéricas puras estruturadas em lote para os 12 meses
+# Preditores ordenados: 0: Precipitação, 1: Vazão, 2: Tmed, 3: chuva_30, 4: chuva_45, 5: chuva_60
 recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
 
 df_input_base_completo = pd.DataFrame({
@@ -127,17 +127,16 @@ df_input_sim_completo = pd.DataFrame({
     'chuva_60_dias_acum': df_sim['chuva_60_dias_sim']
 })[recursos_modelo_turbidez]
 
-# CORREÇÃO DEFINITIVA: Extrai .values para passar matrizes numéricas limpas do NumPy float64 ao .predict()
-# Isso limpa todos os metadados de rótulo de colunas e resolve o erro do dispatch_data_backend
+# RESOLUÇÃO DO PROCESSO: O predict recebe .values (matriz NumPy pura float64) de uma única vez
 turb_base_pred = model_xgb.predict(df_input_base_completo.values.astype(np.float64))
 turb_sim_pred = model_xgb.predict(df_input_sim_completo.values.astype(np.float64))
 
-# Adiciona proteção física para garantir que a turbidez não fique abaixo de 0.1
+# Adiciona proteção física para garantir que a turbidez não fique abaixo de 0.1 NTU
 df_sim['Turb_Base'] = [max(0.1, float(t)) for t in turb_base_pred]
 df_sim['Turb_Sim'] = [max(0.1, float(t)) for t in turb_sim_pred]
 
 # =====================================================================
-# 8. CÁLCULO MÊS A MÊS DO AUMENTO DOS CUSTOS DE TRATAMENTO
+# BLOCO LINEAR 4: ANÁLISE DE IMPACTO FINANCEIRO MÊS A MÊS
 # =====================================================================
 TURB_MEDIA_HISTORICA = 46.0
 FATOR_SENSIBILIDADE_CUSTO = 0.1162
@@ -158,13 +157,13 @@ for i in range(12):
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 
 # =====================================================================
-# 9. APRESENTAÇÃO DOS INDICADORES NA TELA PRINCIPAL
+# 5. APRESENTAÇÃO DOS INDICADORES NA TELA PRINCIPAL
 # =====================================================================
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-# Extração de Agosto (Índice 7)
+# Extração da vazão de Agosto utilizando indexação posicional pura do Pandas (.iloc[7])
 v_sim_ago = df_sim['Vazao_Sim'].iloc[7]
 v_base_ago = df_sim['Vazao_Base'].iloc[7]
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
@@ -174,7 +173,7 @@ pico_custo_mensal = max(custos_incremento_mensal)
 col4.metric("💰 Pico de Custo Químico", f"+{pico_custo_mensal:.2f} %")
 
 # =====================================================================
-# 10. CONSTRUÇÃO GRÁFICA DO PAINEL DE SIMULAÇÃO
+# 6. CONSTRUÇÃO GRÁFICA DO PAINEL DE SIMULAÇÃO
 # =====================================================================
 st.markdown("### 📊 Comportamento Sazonal da Vazão e Excedente Hídrico")
 fig1, ax1 = plt.subplots(figsize=(11, 3.8))
@@ -209,5 +208,3 @@ with col_graph1:
 
 with col_grid2:
     st.markdown("#### Acréscimo nos Custos de Tratamento Químico")
-    fig3, ax_c = plt.subplots(figsize=(6, 4))
-    ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
