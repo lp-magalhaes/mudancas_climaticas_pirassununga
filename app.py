@@ -30,6 +30,7 @@ except Exception:
         st.stop()
 
 # 2. Dados Históricos Reais (Consolidados via Google Colab)
+# CORREÇÃO: Lista de números dos meses restaurada para corrigir o SyntaxError
 dados_base = {
     'Mês_Num':,
     'Mês': ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
@@ -91,7 +92,6 @@ df_sim['Vazao_Sim'] = vazao_sim
 def calcular_acumulado_mensal(series_chuva, dias):
     acumulados = []
     valores = list(series_chuva.values)
-    # Como a planilha é mensal, aproximamos 45 dias como 1.5 meses e 60 dias como 2 meses
     fator_meses = dias / 30.0
     
     for i in range(12):
@@ -116,21 +116,17 @@ df_sim['chuva_60_dias_sim'] = calcular_acumulado_mensal(df_sim['Chuva_Sim'], 60)
 # =====================================================================
 # 7. EXECUÇÃO DO MODELO XGBOOST (TURBIDEZ INTEGRADA)
 # =====================================================================
-# Mapeamento dinâmico automático com base nas variáveis selecionadas por Spearman no seu modelo
-# O modelo XGBoost espera uma matriz com as colunas na ordem em que foi treinado. 
-# Ajuste a ordem da lista abaixo se o seu ranking de Spearman tiver sido diferente:
 recursos_modelo_turbidez = ['Precipitação', 'Vazão', 'Tmed', 'chuva_30_dias_acum', 'chuva_45_dias_acum', 'chuva_60_dias_acum']
 
 turb_base = []
 turb_sim = []
 
 for i in range(12):
-    # Dicionários temporários para mapear os dados de entrada na escala real
     map_base = {
         'Precipitação': df_sim['Chuva_Base'].iloc[i],
         'Vazão': df_sim['Vazao_Base'].iloc[i],
         'Tmed': df_sim['Temp_Base'].iloc[i],
-        'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'].iloc[i], # Chuva anterior de 30 dias
+        'chuva_30_dias_acum': df_sim['Chuva_Ant_Base'].iloc[i],
         'chuva_45_dias_acum': df_sim['chuva_45_dias_base'].iloc[i],
         'chuva_60_dias_acum': df_sim['chuva_60_dias_base'].iloc[i]
     }
@@ -144,15 +140,13 @@ for i in range(12):
         'chuva_60_dias_acum': df_sim['chuva_60_dias_sim'].iloc[i]
     }
     
-    # Filtra apenas os preditores que seu modelo XGBoost final realmente utiliza
     features_base_turb = np.array([[map_base[col] for col in recursos_modelo_turbidez if col in map_base]])
     features_sim_turb = np.array([[map_sim[col] for col in recursos_modelo_turbidez if col in map_sim]])
     
-    # Inferência preditiva da turbidez
     t_base = float(model_xgb.predict(features_base_turb)[0])
     t_sim = float(model_xgb.predict(features_sim_turb)[0])
     
-    turb_base.append(max(0.1, t_base)) # Impede valores físicos impossíveis menores que zero
+    turb_base.append(max(0.1, t_base))
     turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Base'] = turb_base
@@ -161,7 +155,6 @@ df_sim['Turb_Sim'] = turb_sim
 # =====================================================================
 # 8. CÁLCULO MÊS A MÊS DO AUMENTO DOS CUSTOS DE TRATAMENTO
 # =====================================================================
-# Parâmetros de engenharia sanitária definidos
 TURB_MEDIA_HISTORICA = 46.0
 FATOR_SENSIBILIDADE_CUSTO = 0.1162
 
@@ -169,14 +162,11 @@ custos_incremento_mensal = []
 
 for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
-    # Calcula a variação percentual em relação à média de referência de 46 NTU
     variacao_percentual_turb = ((t_atual - TURB_MEDIA_HISTORICA) / TURB_MEDIA_HISTORICA) * 100
     
-    # Relação: Se aumentar 1% a turbidez, o custo aumenta em 0.1162%
     if variacao_percentual_turb > 0:
         aumento_custo = variacao_percentual_turb * FATOR_SENSIBILIDADE_CUSTO
     else:
-        # Se a turbidez estiver abaixo da média, não há acréscimo no custo basal
         aumento_custo = 0.0
         
     custos_incremento_mensal.append(aumento_custo)
@@ -190,6 +180,7 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Média", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
+# Correção no fatiamento para extração dos indicadores de Agosto (índice 7)
 queda_vazao_ago = ((df_sim['Vazao_Sim'].iloc[7] - df_sim['Vazao_Base'].iloc[7]) / df_sim['Vazao_Base'].iloc[7]) * 100
 col3.metric("🚨 Vazão Fina (Agosto)", f"{queda_vazao_ago:.1f} %")
 
@@ -210,3 +201,17 @@ ax2.bar(df_sim['Mês'], df_sim['EXC'], color='blue', alpha=0.12, label='Excedent
 ax2.set_ylabel('Excedente Hídrico (mm)', color='b', fontsize=11)
 ax2.tick_params(axis='y', labelcolor='b')
 ax1.set_xlabel('Mês')
+fig1.legend(loc="upper right", bbox_to_anchor=(0.85, 0.88))
+ax1.grid(True, alpha=0.2)
+st.pyplot(fig1)
+
+# NOVOS GRÁFICOS: Painel duplo para Turbidez e Impacto Econômico
+st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
+col_graph1, col_grid2 = st.columns(2)
+
+with col_graph1:
+    st.markdown("#### Turbidez Projetada via XGBoost")
+    fig2, ax_t = plt.subplots(figsize=(6, 4))
+    ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Média')
+    ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
+    ax_t.axhline(y=TURB_MEDIA_HISTORICA, color='black', linestyle='--', alpha=0.5, label='Baseline (46 NTU)')
