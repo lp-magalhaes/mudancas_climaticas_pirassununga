@@ -60,20 +60,31 @@ df_sim['Bal'] = df_sim['Chuva_Sim'] - df_sim['ETP']
 df_sim['EXC'] = df_sim['Bal'].apply(lambda x: x if x > 0 else 0)
 
 # =====================================================================
-# 5. EXECUÇÃO DO MODELO RANDOM FOREST (PREDIÇÃO DA VAZÃO)
+# 5. EXECUÇÃO DO MODELO RANDOM FOREST (PREDIÇÃO DA VAZÃO - SEM O MÊS)
 # =====================================================================
 vazao_base = []
 vazao_sim = []
 
 for i in range(12):
-    features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
-    features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
+    # REMOÇÃO DO MÊS: Passando apenas as 3 variáveis físicas aceitas pelo novo PKL de vazão
+    features_base = np.array([[
+        df_base['Chuva_Base'].iloc[i], 
+        df_sim['Chuva_Ant_Base'].iloc[i], 
+        df_base['Temp_Base'].iloc[i]
+    ]], dtype=np.float64)
+    
+    features_sim = np.array([[
+        df_sim['Chuva_Sim'].iloc[i], 
+        df_sim['Chuva_Ant_Sim'].iloc[i], 
+        df_sim['Temp_Sim'].iloc[i]
+    ]], dtype=np.float64)
     
     vazao_base.append(float(model_rf.predict(features_base)[0]))
     vazao_sim.append(float(model_rf.predict(features_sim)[0]))
 
 df_sim['Vazao_Base'] = vazao_base
 df_sim['Vazao_Sim'] = vazao_sim
+
 
 # =====================================================================
 # 6. CÁLCULO DIRETO DAS CHUVAS ACUMULADAS (45 E 60 DIAS)
@@ -107,8 +118,8 @@ for i in range(12):
     if delta_temp == 0.0:
         turb_sim.append(df_sim['Turb_Base'].iloc[i])
     else:
+        # CORREÇÃO DEFINITIVA: Passando apenas as 3 variáveis físicas aceitas pelo novo PKL
         features_sim_turb = np.array([[
-            df_sim['Mês_Num'].iloc[i], 
             df_sim['Chuva_Sim'].iloc[i], 
             df_sim['Chuva_Ant_Sim'].iloc[i], 
             df_sim['Temp_Sim'].iloc[i]
@@ -118,6 +129,7 @@ for i in range(12):
         turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
+
 
 # =====================================================================
 # 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS (CORRIGIDO)
