@@ -160,8 +160,8 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-v_sim_ago = float(df_sim['Vazao_Sim'].iloc[10])
-v_base_ago = float(df_sim['Vazao_Base'].iloc[10])
+v_sim_ago = float(df_sim['Vazao_Sim'].iloc[8])
+v_base_ago = float(df_sim['Vazao_Base'].iloc[8])
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
 col3.metric("🚨 Variação da menor vazão", f"{queda_vazao_ago:.1f} %")
 
