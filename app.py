@@ -165,8 +165,8 @@ v_base_ago = float(df_sim['Vazao_Base'].iloc[8])
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
 col3.metric("🚨 Variação da menor vazão", f"{queda_vazao_ago:.1f} %")
 
-pico_custo_mensal = max(custos_incremento_mensal)
-col4.metric("💰 Aumento máximo custo", f"+{pico_custo_mensal:.2f} %")
+pico_custo_mensal = (sum(custos_incremento_mensal))/12
+col4.metric("💰 Aumento médio custo", f"+{pico_custo_mensal:.2f} %")
 
 # =====================================================================
 # 10. CONSTRUÇÃO DOS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO)
