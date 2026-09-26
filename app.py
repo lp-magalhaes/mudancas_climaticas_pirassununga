@@ -220,5 +220,7 @@ with col_grid2:
     st.pyplot(fig3)
 
 # 11. TABELA DE MATRIZ DE DADOS COMPLETA
-st.markdown("### 📝 Matriz de Variáveis Hidrológicas e Econômicas")
-df_exibicao = df_sim[['Mês', 'Chuva_Sim', 'Temp_Sim', 'Vazao_Sim', 'Turb_Base', 'Turb_Sim', 'Aumento_Custo_Pct']].copy()
+st.markdown("### 📝 Matriz Comparativa de Dados Mensais")
+df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Sim', 'EXC', 'Vazao_Base', 'Vazao_Sim']].copy()
+df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Excedente Solo (mm)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)']
+st.dataframe(df_exibicao.round(2), use_container_width=True)
