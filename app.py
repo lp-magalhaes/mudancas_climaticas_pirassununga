@@ -69,7 +69,6 @@ for i in range(12):
     features_base = np.array([[df_base['Mês_Num'].iloc[i], df_base['Chuva_Base'].iloc[i], df_sim['Chuva_Ant_Base'].iloc[i], df_base['Temp_Base'].iloc[i]]], dtype=np.float64)
     features_sim = np.array([[df_sim['Mês_Num'].iloc[i], df_sim['Chuva_Sim'].iloc[i], df_sim['Chuva_Ant_Sim'].iloc[i], df_sim['Temp_Sim'].iloc[i]]], dtype=np.float64)
     
-    # CORREÇÃO DEFINITIVA: Desempacotamento de array adicionando explicitamente o [0]
     vazao_base.append(float(model_rf.predict(features_base)[0]))
     vazao_sim.append(float(model_rf.predict(features_sim)[0]))
 
@@ -86,15 +85,12 @@ c_base = list(df_sim['Chuva_Base'].values)
 c_sim = list(df_sim['Chuva_Sim'].values)
 
 for i in range(12):
-   # Índices com tratamento cíclico para o ano (0 a 11)
-    ant = (i - 1) % 12       # Se i=0 (Jan), ant=11 (Dez)
-    retr = (i - 2) % 12      # Se i=0 (Jan), retr=10 (Nov) | Se i=1 (Fev), retr=11 (Dez)
+    ant = (i - 1) % 12       
+    retr = (i - 2) % 12      
     
-    # Regra de 45 dias: Mês atual + Mês anterior + metade do mês retrasado
     chuva_45_base.append(c_base[ant] + (c_base[retr] * 0.5))
     chuva_45_sim.append(c_sim[ant] + (c_sim[retr] * 0.5))
     
-    # Regra de 60 dias: Mês atual + Soma dos dois meses anteriores
     chuva_60_base.append(c_base[ant] + c_base[retr])
     chuva_60_sim.append(c_sim[ant] + c_sim[retr])
 
@@ -108,11 +104,9 @@ df_sim['Chuva_60_Sim'] = chuva_60_sim
 # =====================================================================
 turb_sim = []
 for i in range(12):
-    # REGRA REQUERIDA: Força o cenário a assumir a base caso a temperatura esteja zerada
     if delta_temp == 0.0:
         turb_sim.append(df_sim['Turb_Base'].iloc[i])
     else:
-        # CORREÇÃO: Utilizando as mesmas 4 variáveis que o modelo de vazão espera
         features_sim_turb = np.array([[
             df_sim['Mês_Num'].iloc[i], 
             df_sim['Chuva_Sim'].iloc[i], 
@@ -120,27 +114,24 @@ for i in range(12):
             df_sim['Temp_Sim'].iloc[i]
         ]], dtype=np.float64)
         
-        # Desempacotamento de array adicionando o [0] para evitar erros de tipo
         t_sim = float(model_rf_turb.predict(features_sim_turb)[0])
         turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
 
-
 # =====================================================================
-# 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS
+# 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS (CORRIGIDO)
 # =====================================================================
 FATOR_SENSIBILIDADE_CUSTO = 0.1162
-TURBIDEZ_MEDIA = 46
 
 custos_incremento_mensal = []
 for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
+    t_base_mes = df_sim['Turb_Base'].iloc[i]  # Modificado para a base individual de cada mês
     
-    # Nova lógica: Subtração da turbidez atual pela média (46)
-    diferenca_turb = t_atual - TURBIDEZ_MEDIA
+    # Diferença calculada em relação à base histórica do mês corrente
+    diferenca_turb = t_atual - t_base_mes
     
-    # O custo aumenta se a turbidez atual for maior que a média
     if diferenca_turb > 0:
         aumento_custo = diferenca_turb * FATOR_SENSIBILIDADE_CUSTO
     else:
@@ -148,7 +139,6 @@ for i in range(12):
         
     custos_incremento_mensal.append(aumento_custo)
 
-# Atribuindo os novos valores de custo ao DataFrame
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 
 # =====================================================================
@@ -167,7 +157,7 @@ pico_custo_mensal = statistics.mean(custos_incremento_mensal)
 col4.metric("💰 Variação média custo", f"+{pico_custo_mensal:.2f} %")
 
 # =====================================================================
-# 10. CONSTRUÇÃO DOS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO COM TRAVA LÓGICA)
+# 10. CONSTRUÇÃO DOS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO)
 # =====================================================================
 st.markdown("### 📊 Comportamento Sazonal da Vazão via Machine Learning (Random Forest)")
 
@@ -193,13 +183,12 @@ st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
 col_graph1, col_grid2 = st.columns(2)
 
 with col_graph1:
-    # Ajustado título para referenciar o modelo Random Forest
     st.markdown("#### Valor da Turbidez do Rio via Random Forest")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     
-    ax_t.axhline(y=46.0, color='black', linestyle='--', alpha=0.5, label='Referência Média (46 NTU)')
+    # Plotagem da turbidez real base como linha de referência histórica
+    ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', alpha=0.8, linewidth=2, label='Turbidez Histórica Base')
     
-    # A linha vermelha desaparece da tela caso o controle de aquecimento esteja em zero
     if delta_temp != 0.0:
         ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
         
@@ -219,8 +208,8 @@ with col_grid2:
     ax_c.grid(True, alpha=0.2)
     st.pyplot(fig3)
 
-# 11. TABELA DE MATRIZ DE DADOS COMPLETA
+# 11. TABELA DE MATRIZ DE DADOS COMPLETA (ADICIONADA AS COLUNAS DE TURBIDEZ)
 st.markdown("### 📝 Matriz Comparativa de Dados Mensais")
-df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Sim', 'EXC', 'Vazao_Base', 'Vazao_Sim']].copy()
-df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Excedente Solo (mm)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)']
+df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Sim', 'Vazao_Base', 'Vazao_Sim', 'Turb_Base', 'Turb_Sim', 'Aumento_Custo_Pct']].copy()
+df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)', 'Turbidez Base (NTU)', 'Turbidez Simulada (NTU)', 'Aumento no Custo (%)']
 st.dataframe(df_exibicao.round(2), use_container_width=True)
