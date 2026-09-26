@@ -18,9 +18,10 @@ except FileNotFoundError:
     st.stop()
 
 try:
-    model_xgb = joblib.load('best_xgboost_model.pkl')
+    # Substituído o XGBoost pelo Random Forest de Turbidez
+    model_rf_turb = joblib.load('modelo_rf_turbidez.pkl')
 except FileNotFoundError:
-    st.error("❌ Erro: O arquivo 'best_xgboost_model.pkl' não foi encontrado no repositório.")
+    st.error("❌ Erro: O arquivo 'modelo_rf_turbidez.pkl' não foi encontrado no repositório.")
     st.stop()
 
 # 2. DADOS HISTÓRICOS REAIS E VALORES DE TURBIDEZ BASE INTERPOLADOS MÊS A MÊS
@@ -103,7 +104,7 @@ df_sim['Chuva_60_Base'] = chuva_60_base
 df_sim['Chuva_60_Sim'] = chuva_60_sim
 
 # =====================================================================
-# 7. EXECUÇÃO DO MODELO XGBOOST (PREDIÇÃO DA TURBIDEZ)
+# 7. EXECUÇÃO DO MODELO RANDOM FOREST (PREDIÇÃO DA TURBIDEZ)
 # =====================================================================
 turb_sim = []
 for i in range(12):
@@ -112,8 +113,8 @@ for i in range(12):
         turb_sim.append(df_sim['Turb_Base'].iloc[i])
     else:
         array_sim = np.array([[df_sim['Vazao_Sim'].iloc[i], df_sim['Chuva_45_Sim'].iloc[i], df_sim['Chuva_60_Sim'].iloc[i]]], dtype=np.float64)
-        # CORREÇÃO DEFINITIVA: Desempacotamento de array adicionando explicitamente o [0]
-        t_sim = float(model_xgb.predict(array_sim)[0])
+        # Execução realizada utilizando o novo modelo Random Forest da turbidez
+        t_sim = float(model_rf_turb.predict(array_sim)[0])
         turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
@@ -141,6 +142,7 @@ for i in range(12):
 
 # Atribuindo os novos valores de custo ao DataFrame
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
+
 # =====================================================================
 # 9. EXIBIÇÃO DOS INDICADORES DE TOPO
 # =====================================================================
@@ -183,10 +185,10 @@ st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
 col_graph1, col_grid2 = st.columns(2)
 
 with col_graph1:
-    st.markdown("#### Valor da Turbidez do Rio via XGBoost")
+    # Ajustado título para referenciar o modelo Random Forest
+    st.markdown("#### Valor da Turbidez do Rio via Random Forest")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     
-    #ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', label='Turbidez Histórica Real')
     ax_t.axhline(y=46.0, color='black', linestyle='--', alpha=0.5, label='Referência Média (46 NTU)')
     
     # A linha vermelha desaparece da tela caso o controle de aquecimento esteja em zero
@@ -212,5 +214,3 @@ with col_grid2:
 # 11. TABELA DE MATRIZ DE DADOS COMPLETA
 st.markdown("### 📝 Matriz de Variáveis Hidrológicas e Econômicas")
 df_exibicao = df_sim[['Mês', 'Chuva_Sim', 'Temp_Sim', 'Vazao_Sim', 'Turb_Base', 'Turb_Sim', 'Aumento_Custo_Pct']].copy()
-df_exibicao.columns = ['Mês', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Vazão Simulada (m³/s)', 'Turbidez Base (NTU)', 'Turbidez Simulada (NTU)', 'Aumento no Custo de Tratamento (%)']
-st.dataframe(df_exibicao.round(2), use_container_width=True)
