@@ -112,12 +112,20 @@ for i in range(12):
     if delta_temp == 0.0:
         turb_sim.append(df_sim['Turb_Base'].iloc[i])
     else:
-        array_sim = np.array([[df_sim['Vazao_Sim'].iloc[i], df_sim['Chuva_45_Sim'].iloc[i], df_sim['Chuva_60_Sim'].iloc[i]]], dtype=np.float64)
-        # Execução realizada utilizando o novo modelo Random Forest da turbidez
-        t_sim = float(model_rf_turb.predict(array_sim)[0])
+        # CORREÇÃO: Utilizando as mesmas 4 variáveis que o modelo de vazão espera
+        features_sim_turb = np.array([[
+            df_sim['Mês_Num'].iloc[i], 
+            df_sim['Chuva_Sim'].iloc[i], 
+            df_sim['Chuva_Ant_Sim'].iloc[i], 
+            df_sim['Temp_Sim'].iloc[i]
+        ]], dtype=np.float64)
+        
+        # Desempacotamento de array adicionando o [0] para evitar erros de tipo
+        t_sim = float(model_rf_turb.predict(features_sim_turb)[0])
         turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
+
 
 # =====================================================================
 # 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS
