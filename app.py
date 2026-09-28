@@ -230,6 +230,12 @@ with col_graph1:
 with col_grid2:
     st.markdown("#### Custo do Tratamento Químico Mês a Mês")
     fig3, ax_c = plt.subplots(figsize=(6, 4))
+    ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
+    ax_c.set_ylabel('Aumento no Custo de Tratamento (%)')
+    ax_c.set_xlabel('Mês')
+    ax_c.legend(fontsize=9, loc='upper right')
+    ax_c.grid(True, alpha=0.2)
+    st.pyplot(fig3)
 
 st.markdown("### 📝 Matriz Comparativa de Dados Mensais")
 df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Sim', 'Vazao_Base', 'Vazao_Sim', 'Turb_Base', 'Turb_Sim', 'Aumento_Custo_Pct']].copy()
