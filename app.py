@@ -151,7 +151,7 @@ for i in range(12):
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 
 # =====================================================================
-# 9. EXIBIÇÃO DOS INDICADORES DE TOPO (CORRIGIDO)
+# 9. EXIBIÇÃO DOS INDICADORES DE TOPO
 # =====================================================================
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
@@ -159,7 +159,7 @@ col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
 chuva_media_impacto = df_sim['Delta_Chuva_Pct'].mean()
 col2.metric("📉 Alteração Chuva Média", f"{chuva_media_impacto:.1f} %")
 
-v_sim_ago = float(df_sim['Vazao_Sim'].iloc[7])  # Corrigido índice para Agosto (posição 7 no Python)
+v_sim_ago = float(df_sim['Vazao_Sim'].iloc[7])
 v_base_ago = float(df_sim['Vazao_Base'].iloc[7])
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
 col3.metric("🚨 Variação da menor vazão", f"{queda_vazao_ago:.1f} %")
@@ -168,7 +168,28 @@ pico_custo_mensal = (sum(custos_incremento_mensal)) / 12
 col4.metric("💰 Aumento médio custo", f"+{pico_custo_mensal:.2f} %")
 
 # =====================================================================
-# 10. CONSTRUÇÃO DOS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO)
+# 10. NOVO GRÁFICO: COMPARAÇÃO DE CHUVA (BASE VS SIMULADA)
+# =====================================================================
+st.markdown("### 🌧️ Comparativo de Pluviosidade Sazonal (Base Histórica vs. Cenário Simulado)")
+
+fig_chuva, ax_ch = plt.subplots(figsize=(11, 3.5))
+x_indices = np.arange(len(df_sim['Mês']))
+largura_barra = 0.35
+
+# Plotagem em barras pareadas para fácil visualização do ganho ou perda de chuva
+ax_ch.bar(x_indices - largura_barra/2, df_sim['Chuva_Base'], largura_barra, label='Chuva Histórica Base (mm)', color='#4682B4', alpha=0.8)
+ax_ch.bar(x_indices + largura_barra/2, df_sim['Chuva_Sim'], largura_barra, label='Chuva Simulada Cenário (mm)', color='#1E90FF', alpha=0.9)
+
+ax_ch.set_ylabel('Precipitação (mm)', fontsize=12)
+ax_ch.set_xlabel('Mês', fontsize=12)
+ax_ch.set_xticks(x_indices)
+ax_ch.set_xticklabels(df_sim['Mês'])
+ax_ch.legend(loc="upper right")
+ax_ch.grid(True, alpha=0.2, linestyle=':')
+st.pyplot(fig_chuva)
+
+# =====================================================================
+# 11. CONSTRUÇÃO DOS DEMAIS GRÁFICOS (VAZÃO, TURBIDEZ E CUSTO)
 # =====================================================================
 st.markdown("### 📊 Comportamento Sazonal da Vazão via Machine Learning (Random Forest)")
 
@@ -209,14 +230,7 @@ with col_graph1:
 with col_grid2:
     st.markdown("#### Custo do Tratamento Químico Mês a Mês")
     fig3, ax_c = plt.subplots(figsize=(6, 4))
-    ax_c.bar(df_sim['Mês'], df_sim['Aumento_Custo_Pct'], color='#ff7f0e', alpha=0.8, edgecolor='orange', label='Aumento do Custo (%)')
-    ax_c.set_ylabel('Aumento no Custo de Tratamento (%)')
-    ax_c.set_xlabel('Mês')
-    ax_c.legend(fontsize=9, loc='upper right')
-    ax_c.grid(True, alpha=0.2)
-    st.pyplot(fig3)
 
-# 11. TABELA DE MATRIZ DE DADOS COMPLETA
 st.markdown("### 📝 Matriz Comparativa de Dados Mensais")
 df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Sim', 'Vazao_Base', 'Vazao_Sim', 'Turb_Base', 'Turb_Sim', 'Aumento_Custo_Pct']].copy()
 df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)', 'Turbidez Base (NTU)', 'Turbidez Simulada (NTU)', 'Aumento no Custo (%)']
