@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import joblib
-import statistics
 
 # 1. CONFIGURAÇÃO DA PÁGINA DO SIMULADOR
 st.set_page_config(page_title="Impacto Climático - Pirassununga", layout="wide")
@@ -18,7 +17,6 @@ except FileNotFoundError:
     st.stop()
 
 try:
-    # Substituído o XGBoost pelo Random Forest de Turbidez
     model_rf_turb = joblib.load('modelo_rf_turbidez.pkl')
 except FileNotFoundError:
     st.error("❌ Erro: O arquivo 'modelo_rf_turbidez.pkl' não foi encontrado no repositório.")
@@ -35,18 +33,25 @@ dados_base = {
 }
 df_base = pd.DataFrame(dados_base)
 
-# 3. PAINEL LATERAL INTERATIVO (CONTROLE ÚNICO POR TEMPERATURA)
+# 3. PAINEL LATERAL INTERATIVO (OPÇÕES FIXAS DE TEMPERATURA)
 st.sidebar.header("🎛️ Cenário de Aquecimento Global")
-delta_temp = st.sidebar.slider("Variação da Temperatura Média (°C)", min_value=-5.0, max_value=5.0, value=0.0, step=0.1)
+delta_temp = st.sidebar.selectbox("Variação da Temperatura Média (°C)", options=[1.5, 2.0, 3.0, 4.0], index=0)
 
-# Gatilho Climático Regional (-7% de pluviosidade por grau de aquecimento)
-queda_chuva_por_grau = -0.07 
-delta_chuva_percentual = delta_temp * queda_chuva_por_grau * 100
+# Mapeamento dos percentuais de chuva por trimestre e por temperatura
+matriz_chuva = {
+    1.5: {12: 1.9, 1: 1.9, 2: 1.9, 3: 2.2, 4: 2.2, 5: 2.2, 6: -3.9, 7: -3.9, 8: -3.9, 9: -0.7, 10: -0.7, 11: -0.7},
+    2.0: {12: 3.4, 1: 3.4, 2: 3.4, 3: 2.8, 4: 2.8, 5: 2.8, 6: -3.6, 7: -3.6, 8: -3.6, 9: -0.5, 10: -0.5, 11: -0.5},
+    3.0: {12: 6.0, 1: 6.0, 2: 6.0, 3: 10.7, 4: 10.7, 5: 10.7, 6: -0.7, 7: -0.7, 8: -0.7, 9: 2.3, 10: 2.3, 11: 2.3},
+    4.0: {12: 9.7, 1: 9.7, 2: 9.7, 3: 15.1, 4: 15.1, 5: 15.1, 6: 3.1, 7: 3.1, 8: 3.1, 9: 4.9, 10: 4.9, 11: 4.9}
+}
 
 # 4. PROCESSAMENTO HIDROLÓGICO DO CENÁRIO
 df_sim = df_base.copy()
 df_sim['Temp_Sim'] = df_sim['Temp_Base'] + delta_temp
-df_sim['Chuva_Sim'] = df_sim['Chuva_Base'] * (1 + delta_chuva_percentual / 100.0)
+
+# Aplicação da variação percentual customizada mês a mês baseado na temperatura
+df_sim['Delta_Chuva_Pct'] = df_sim['Mês_Num'].map(matriz_chuva[delta_temp])
+df_sim['Chuva_Sim'] = df_sim['Chuva_Base'] * (1 + df_sim['Delta_Chuva_Pct'] / 100.0)
 
 # Memória de Chuva Anterior exigida pelo Random Forest de Vazão
 df_sim['Chuva_Ant_Base'] = df_sim['Chuva_Base'].shift(1).fillna(df_sim['Chuva_Base'].mean())
@@ -60,13 +65,12 @@ df_sim['Bal'] = df_sim['Chuva_Sim'] - df_sim['ETP']
 df_sim['EXC'] = df_sim['Bal'].apply(lambda x: x if x > 0 else 0)
 
 # =====================================================================
-# 5. EXECUÇÃO DO MODELO RANDOM FOREST (PREDIÇÃO DA VAZÃO - SEM O MÊS)
+# 5. EXECUÇÃO DO MODELO RANDOM FOREST (PREDIÇÃO DA VAZÃO)
 # =====================================================================
 vazao_base = []
 vazao_sim = []
 
 for i in range(12):
-    # REMOÇÃO DO MÊS: Passando apenas as 3 variáveis físicas aceitas pelo novo PKL de vazão
     features_base = np.array([[
         df_base['Chuva_Base'].iloc[i], 
         df_sim['Chuva_Ant_Base'].iloc[i], 
@@ -84,7 +88,6 @@ for i in range(12):
 
 df_sim['Vazao_Base'] = vazao_base
 df_sim['Vazao_Sim'] = vazao_sim
-
 
 # =====================================================================
 # 6. CÁLCULO DIRETO DAS CHUVAS ACUMULADAS (45 E 60 DIAS)
@@ -115,33 +118,27 @@ df_sim['Chuva_60_Sim'] = chuva_60_sim
 # =====================================================================
 turb_sim = []
 for i in range(12):
-    if delta_temp == 0.0:
-        turb_sim.append(df_sim['Turb_Base'].iloc[i])
-    else:
-        # CORREÇÃO DEFINITIVA: Passando apenas as 3 variáveis físicas aceitas pelo novo PKL
-        features_sim_turb = np.array([[
-            df_sim['Chuva_Sim'].iloc[i], 
-            df_sim['Chuva_Ant_Sim'].iloc[i], 
-            df_sim['Temp_Sim'].iloc[i]
-        ]], dtype=np.float64)
-        
-        t_sim = float(model_rf_turb.predict(features_sim_turb)[0])
-        turb_sim.append(max(0.1, t_sim))
+    features_sim_turb = np.array([[
+        df_sim['Chuva_Sim'].iloc[i], 
+        df_sim['Chuva_Ant_Sim'].iloc[i], 
+        df_sim['Temp_Sim'].iloc[i]
+    ]], dtype=np.float64)
+    
+    t_sim = float(model_rf_turb.predict(features_sim_turb)[0])
+    turb_sim.append(max(0.1, t_sim))
 
 df_sim['Turb_Sim'] = turb_sim
 
-
 # =====================================================================
-# 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS (CORRIGIDO)
+# 8. CÁLCULO DO CUSTO DO TRATAMENTO DE ÁGUA MÊS A MÊS
 # =====================================================================
 FATOR_SENSIBILIDADE_CUSTO = 0.1162
 
 custos_incremento_mensal = []
 for i in range(12):
     t_atual = df_sim['Turb_Sim'].iloc[i]
-    t_base_mes = df_sim['Turb_Base'].iloc[i]  # Modificado para a base individual de cada mês
+    t_base_mes = df_sim['Turb_Base'].iloc[i]
     
-    # Diferença calculada em relação à base histórica do mês corrente
     diferenca_turb = t_atual - t_base_mes
     
     if diferenca_turb > 0:
@@ -154,18 +151,20 @@ for i in range(12):
 df_sim['Aumento_Custo_Pct'] = custos_incremento_mensal
 
 # =====================================================================
-# 9. EXIBIÇÃO DOS INDICADORES DE TOPO
+# 9. EXIBIÇÃO DOS INDICADORES DE TOPO (CORRIGIDO)
 # =====================================================================
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("🌡️ Aquecimento Médio", f"{delta_temp} °C")
-col2.metric("📉 Alteração Chuva (IPCC)", f"{delta_chuva_percentual:.1f} %")
 
-v_sim_ago = float(df_sim['Vazao_Sim'].iloc[8])
-v_base_ago = float(df_sim['Vazao_Base'].iloc[8])
+chuva_media_impacto = df_sim['Delta_Chuva_Pct'].mean()
+col2.metric("📉 Alteração Chuva Média", f"{chuva_media_impacto:.1f} %")
+
+v_sim_ago = float(df_sim['Vazao_Sim'].iloc[7])  # Corrigido índice para Agosto (posição 7 no Python)
+v_base_ago = float(df_sim['Vazao_Base'].iloc[7])
 queda_vazao_ago = ((v_sim_ago - v_base_ago) / v_base_ago) * 100
 col3.metric("🚨 Variação da menor vazão", f"{queda_vazao_ago:.1f} %")
 
-pico_custo_mensal = (sum(custos_incremento_mensal))/12
+pico_custo_mensal = (sum(custos_incremento_mensal)) / 12
 col4.metric("💰 Aumento médio custo", f"+{pico_custo_mensal:.2f} %")
 
 # =====================================================================
@@ -198,11 +197,8 @@ with col_graph1:
     st.markdown("#### Valor da Turbidez do Rio via Random Forest")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     
-    # Plotagem da turbidez real base como linha de referência histórica
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', alpha=0.8, linewidth=2, label='Turbidez Histórica Base')
-    
-    if delta_temp != 0.0:
-        ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
+    ax_t.plot(df_sim['Mês'], df_sim['Turb_Sim'], color='#d62728', linestyle='-', marker='s', linewidth=2.5, label='Turbidez Simulada Cenário')
         
     ax_t.set_ylabel('Turbidez Bruta (NTU)')
     ax_t.set_xlabel('Mês')
@@ -220,7 +216,7 @@ with col_grid2:
     ax_c.grid(True, alpha=0.2)
     st.pyplot(fig3)
 
-# 11. TABELA DE MATRIZ DE DADOS COMPLETA (ADICIONADA AS COLUNAS DE TURBIDEZ)
+# 11. TABELA DE MATRIZ DE DADOS COMPLETA
 st.markdown("### 📝 Matriz Comparativa de Dados Mensais")
 df_exibicao = df_sim[['Mês', 'Chuva_Base', 'Chuva_Sim', 'Temp_Sim', 'Vazao_Base', 'Vazao_Sim', 'Turb_Base', 'Turb_Sim', 'Aumento_Custo_Pct']].copy()
 df_exibicao.columns = ['Mês', 'Chuva Base (mm)', 'Chuva Simulada (mm)', 'Temp. Simulada (°C)', 'Vazão Base (m³/s)', 'Vazão Simulada (m³/s)', 'Turbidez Base (NTU)', 'Turbidez Simulada (NTU)', 'Aumento no Custo (%)']
