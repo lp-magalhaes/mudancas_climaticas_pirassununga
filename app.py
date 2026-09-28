@@ -215,7 +215,7 @@ st.markdown("### 📈 Diagnóstico de Qualidade da Água e Impacto Financeiro")
 col_graph1, col_grid2 = st.columns(2)
 
 with col_graph1:
-    st.markdown("#### Valor da Turbidez do Rio via Random Forest")
+    st.markdown("#### Valor da Turbidez via Random Forest")
     fig2, ax_t = plt.subplots(figsize=(6, 4))
     
     ax_t.plot(df_sim['Mês'], df_sim['Turb_Base'], color='#7f7f7f', linestyle=':', marker='o', alpha=0.8, linewidth=2, label='Turbidez Histórica Base')
